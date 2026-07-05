@@ -60,7 +60,7 @@ class Config:
     
     # LLM audit endpoint configuration
     llm_endpoint: str = "http://localhost:1234/v1/chat/completions"
-    llm_model: str = "qwen2.5-math"
+    llm_model: str = "qwen2.5-math-7b-instruct"
     
     # Audit system prompt
     audit_prompt: str = (
