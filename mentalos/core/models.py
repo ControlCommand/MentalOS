@@ -27,6 +27,20 @@ class GateLog:
 
 
 @dataclass(frozen=True)
+class Variable:
+    """
+    Immutable record of a calculated or given variable.
+    
+    Single source of truth for all variables in the catalog.
+    """
+    name: str  # e.g., "F_parallel", "d", "W"
+    value: float
+    unit: str
+    formula_id: str | None = None  # Which formula produced this (if calculated)
+    source: str = "given"  # "given", "calculated", "derived"
+
+
+@dataclass(frozen=True)
 class ProblemPart:
     """
     Represents a single sub-question (a, b, c, etc.) of a multi-part problem.
@@ -55,6 +69,9 @@ class Session:
         is_primary_lock_complete: Whether Primary Operation Lock has been completed (gates 0-1 are globally locked)
         locked_requested_output: The locked Requested Output value (None until gate 0 complete)
         locked_primary_operation: The locked Primary Operation value (None until gate 1 complete)
+        variable_catalog: Dict of variable name -> Variable (single source of truth)
+        selected_formula_id: ID of formula selected for current operation (if any)
+        pending_dependencies: Tuple of variable names still needed before execution
     """
     part_id: str
     question: str
@@ -64,6 +81,9 @@ class Session:
     is_primary_lock_complete: bool = False
     locked_requested_output: str | None = None
     locked_primary_operation: str | None = None
+    variable_catalog: dict[str, Variable] = field(default_factory=dict)
+    selected_formula_id: str | None = None
+    pending_dependencies: tuple[str, ...] = ()
 
 
 # Type alias for the immutable call stack
@@ -93,3 +113,4 @@ class PipelineResult:
     problem_text: str
     sessions: tuple[Session, ...]
     audit_result: AuditResult | None
+
