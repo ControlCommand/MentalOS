@@ -4,14 +4,14 @@ __pycache__/
 *.pyc
 *.pyo
 *.pyd
-*.py~
-*.pyc~
-*.pyo~
 .Python
 env/
 venv/
 .venv/
+.ENV
+.ENV.*
 .venv.bak/
+.venv*/
 pip-log.txt
 pip-delete-this-directory.txt
 .tox/
@@ -22,48 +22,94 @@ nosetests.xml
 coverage.xml
 *.cover
 *.log
-*.pot
-*.po
-*~
 .pytest_cache/
 .mypy_cache/
 .hypothesis/
 
-# Distribution / packaging
-.Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
-.installed.cfg
-*.egg
-MANIFEST
-
-# IDEs
-.vscode/
-.idea/
-*.swp
-*.swo
-
-# OS
+# Django/Python web frameworks
+*.mo
+*.pot
 .DS_Store
 Thumbs.db
 
-# Environment files
+# Local development settings
+.settings/
+.vscode/
+.idea/
+
+# Environment variables
 .env
+.env.*
 .env.local
-.env.dev
+.env.production
+.env.staging
+.env.development
 .env.test
-.env.prod
-.env.backup
-.env~
+.env.local.*
+
+# Database
+*.db
+*.db-journal
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+Thumbs.db:encryptable
+*:Zone.Identifier
+
+# Logs
+*.log
+logs/
+*.out
+
+# Backup files
+*.bak
+*.swp
+*.swo
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+.sass-cache/
+coverage/
+htmlcov/
+*.so
+*.dylib
+*.dll
+*.exe
+*.out
+*.class
+*.o
+*.a
+*.obj
+*.tar.gz
+*.zip
+*.gz
+*.tar
+*.tgz
+*.bz2
+*.xz
+*.7z
+*.rar
+*.zst
+*.lz4
+*.lzh
+*.cab
+*.arj
+*.rpm
+*.deb
+*.Z
+*.lz
+*.lzo
+
+# Temporary files
+*.tmp
+*~
+\#*\#
 ```
