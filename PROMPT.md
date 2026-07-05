@@ -68,6 +68,7 @@ Before finalizing any response, mentally audit your code against these 10 core p
 - Suggest improvements and optimizations proactively.
   
 <|im_end|>
+
 <|im_start|>user
 
 Write a complete, modular Python (3.12+) program for MentalOS – an interactive cognitive training tool that walks the user through a strict, timed, 10‑gate pipeline for solving physics/math problems, supports multi‑part questions, a Winner‑Takes‑All lock with deferred operations, and a recursive sub‑operation stack, ending with an LLM‑powered audit.
@@ -262,4 +263,5 @@ All pure functions must have docstrings; comments explain why, not what.
 - Do not leave any TODO or placeholder. Every line of code must be production‑clean.
   
 <|im_end|>
+
 <|im_start|>assistant
