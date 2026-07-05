@@ -57,9 +57,12 @@ def compile_audit_summary(
                 f"  [{log.gate}] ({log.time_sec:.2f}s): {log.answer}"
             )
         
-        if session.sub_operation_result:
+        # Show variable catalog if populated
+        if session.variable_catalog:
             lines.append("")
-            lines.append(f"Sub-operation Result: {session.sub_operation_result}")
+            lines.append("Variable Catalog:")
+            for name, var in session.variable_catalog.items():
+                lines.append(f"  {name} = {var.value} {var.unit} ({var.source})")
         
         lines.append("")
         lines.append("-" * 60)
