@@ -50,18 +50,20 @@ class Session:
         part_id: Label of the current problem part (e.g., 'a', 'b')
         question: The full text of this part's question
         logs: Tuple of GateLog entries accumulated so far
-        deferred_ops: Queue of operations deferred for later processing
+        secondary_ops: Queue of secondary operations to process after primary completes
         current_gate_idx: Index into the gate_sequence for next gate to process
-        sub_operation_result: Result from a sub-operation if this session was a sub-task
-        parent_execution_answer: Answer from parent session when returning from :defer
+        is_primary_lock_complete: Whether Primary Operation Lock has been completed (gates 0-1 are globally locked)
+        locked_requested_output: The locked Requested Output value (None until gate 0 complete)
+        locked_primary_operation: The locked Primary Operation value (None until gate 1 complete)
     """
     part_id: str
     question: str
     logs: tuple[GateLog, ...] = ()
-    deferred_ops: tuple[str, ...] = ()
+    secondary_ops: tuple[str, ...] = ()
     current_gate_idx: int = 0
-    sub_operation_result: str | None = None
-    parent_execution_answer: str | None = None
+    is_primary_lock_complete: bool = False
+    locked_requested_output: str | None = None
+    locked_primary_operation: str | None = None
 
 
 # Type alias for the immutable call stack

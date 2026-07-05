@@ -26,10 +26,11 @@ def initial_session(part: ProblemPart) -> Session:
         part_id=part.label,
         question=part.text,
         logs=(),
-        deferred_ops=(),
+        secondary_ops=(),
         current_gate_idx=0,
-        sub_operation_result=None,
-        parent_execution_answer=None,
+        is_primary_lock_complete=False,
+        locked_requested_output=None,
+        locked_primary_operation=None,
     )
 
 
@@ -45,6 +46,9 @@ def record_gate_answer(
     This creates a new Session with the log entry added and advances
     the current gate index. The original session remains unchanged.
     
+    For gates 0-1 (Requested Output, Primary Operation Lock), also stores
+    the locked values that persist for all secondary operations.
+    
     Args:
         session: Current session state
         gate_name: Name of the gate being recorded
@@ -59,30 +63,45 @@ def record_gate_answer(
         answer=answer,
         time_sec=elapsed_seconds
     )
+    
+    # Determine if we're completing the primary lock (after gate 1)
+    new_gate_idx = session.current_gate_idx + 1
+    is_lock_complete = session.is_primary_lock_complete or (new_gate_idx >= 2)
+    
+    # Store locked values for gates 0 and 1
+    locked_req_output = session.locked_requested_output
+    locked_prim_op = session.locked_primary_operation
+    
+    if session.current_gate_idx == 0:  # Requested Output gate
+        locked_req_output = answer
+    elif session.current_gate_idx == 1:  # Primary Operation Lock gate
+        locked_prim_op = answer
+    
     return Session(
         part_id=session.part_id,
         question=session.question,
         logs=(*session.logs, new_log),
-        deferred_ops=session.deferred_ops,
-        current_gate_idx=session.current_gate_idx + 1,
-        sub_operation_result=session.sub_operation_result,
-        parent_execution_answer=session.parent_execution_answer,
+        secondary_ops=session.secondary_ops,
+        current_gate_idx=new_gate_idx,
+        is_primary_lock_complete=is_lock_complete,
+        locked_requested_output=locked_req_output,
+        locked_primary_operation=locked_prim_op,
     )
 
 
-def add_deferred_ops(session: Session, ops_string: str) -> Session:
+def add_secondary_ops(session: Session, ops_string: str) -> Session:
     """
-    Parse and add deferred operations from user input.
+    Parse and add secondary operations from user input.
     
     Takes a comma-separated string of operations and appends them
-    to the deferred_ops queue in the session.
+    to the secondary_ops queue in the session.
     
     Args:
         session: Current session state
         ops_string: Comma-separated list of operation descriptions
     
     Returns:
-        New Session with updated deferred_ops tuple
+        New Session with updated secondary_ops tuple
     """
     # Split by comma, strip whitespace, filter empty strings
     new_ops = tuple(
@@ -93,18 +112,19 @@ def add_deferred_ops(session: Session, ops_string: str) -> Session:
         part_id=session.part_id,
         question=session.question,
         logs=session.logs,
-        deferred_ops=(*session.deferred_ops, *new_ops),
+        secondary_ops=(*session.secondary_ops, *new_ops),
         current_gate_idx=session.current_gate_idx,
-        sub_operation_result=session.sub_operation_result,
-        parent_execution_answer=session.parent_execution_answer,
+        is_primary_lock_complete=session.is_primary_lock_complete,
+        locked_requested_output=session.locked_requested_output,
+        locked_primary_operation=session.locked_primary_operation,
     )
 
 
-def pop_deferred_op(session: Session) -> tuple[Session, str | None]:
+def pop_secondary_op(session: Session) -> tuple[Session, str | None]:
     """
-    Remove and return the next deferred operation from the queue.
+    Remove and return the next secondary operation from the queue.
     
-    Uses FIFO ordering - first deferred operation is processed first.
+    Uses FIFO ordering - first secondary operation is processed first.
     
     Args:
         session: Current session state
@@ -112,20 +132,21 @@ def pop_deferred_op(session: Session) -> tuple[Session, str | None]:
     Returns:
         Tuple of (new Session without the op, the popped operation or None if empty)
     """
-    if not session.deferred_ops:
+    if not session.secondary_ops:
         return session, None
     
-    next_op = session.deferred_ops[0]
-    remaining = session.deferred_ops[1:]
+    next_op = session.secondary_ops[0]
+    remaining = session.secondary_ops[1:]
     
     return Session(
         part_id=session.part_id,
         question=session.question,
         logs=session.logs,
-        deferred_ops=remaining,
+        secondary_ops=remaining,
         current_gate_idx=session.current_gate_idx,
-        sub_operation_result=session.sub_operation_result,
-        parent_execution_answer=session.parent_execution_answer,
+        is_primary_lock_complete=session.is_primary_lock_complete,
+        locked_requested_output=session.locked_requested_output,
+        locked_primary_operation=session.locked_primary_operation,
     ), next_op
 
 
@@ -133,8 +154,8 @@ def reset_session_to_gate(session: Session, gate_idx: int) -> Session:
     """
     Reset a session to restart from a specific gate index.
     
-    Used when processing deferred operations to restart the pipeline
-    at the configured starting gate (e.g., Intent).
+    Used when processing secondary operations to restart the pipeline
+    at the Bucket gate (index 2). Gates 0-1 remain locked.
     
     Args:
         session: Current session state
@@ -147,10 +168,11 @@ def reset_session_to_gate(session: Session, gate_idx: int) -> Session:
         part_id=session.part_id,
         question=session.question,
         logs=session.logs,
-        deferred_ops=session.deferred_ops,
+        secondary_ops=session.secondary_ops,
         current_gate_idx=gate_idx,
-        sub_operation_result=session.sub_operation_result,
-        parent_execution_answer=session.parent_execution_answer,
+        is_primary_lock_complete=session.is_primary_lock_complete,
+        locked_requested_output=session.locked_requested_output,
+        locked_primary_operation=session.locked_primary_operation,
     )
 
 
@@ -158,7 +180,7 @@ def inject_sub_result(session: Session, result: str) -> Session:
     """
     Inject a sub-operation result into the parent session.
     
-    Called when returning from a :defer sub-operation. The result
+    Called when returning from a sub-operation. The result
     becomes the execution answer for the parent's Execution gate.
     
     Args:
@@ -172,10 +194,11 @@ def inject_sub_result(session: Session, result: str) -> Session:
         part_id=session.part_id,
         question=session.question,
         logs=session.logs,
-        deferred_ops=session.deferred_ops,
+        secondary_ops=session.secondary_ops,
         current_gate_idx=session.current_gate_idx,
-        sub_operation_result=result,
-        parent_execution_answer=session.parent_execution_answer,
+        is_primary_lock_complete=session.is_primary_lock_complete,
+        locked_requested_output=session.locked_requested_output,
+        locked_primary_operation=session.locked_primary_operation,
     )
 
 
@@ -274,10 +297,10 @@ def should_trigger_sub_operation(answer: str) -> bool:
     """
     Check if the user's answer indicates a sub-operation trigger.
     
-    The special command ':defer' signals that the current task requires
+    The special command ':sub' signals that the current task requires
     a nested sub-operation to complete first.
     """
-    return answer.strip().lower() == ":defer"
+    return answer.strip().lower() == ":sub"
 
 
 def should_return_from_sub_op(answer: str) -> bool:
@@ -306,10 +329,13 @@ def format_session_summary(session: Session) -> str:
     for log in session.logs:
         lines.append(f"  [{log.gate}] ({log.time_sec:.2f}s): {log.answer}")
     
-    if session.sub_operation_result:
-        lines.append(f"\nSub-operation Result: {session.sub_operation_result}")
+    if session.locked_requested_output:
+        lines.append(f"\nLocked Requested Output: {session.locked_requested_output}")
     
-    if session.deferred_ops:
-        lines.append(f"\nPending Deferred Ops: {', '.join(session.deferred_ops)}")
+    if session.locked_primary_operation:
+        lines.append(f"Locked Primary Operation: {session.locked_primary_operation}")
+    
+    if session.secondary_ops:
+        lines.append(f"\nPending Secondary Ops: {', '.join(session.secondary_ops)}")
     
     return "\n".join(lines)

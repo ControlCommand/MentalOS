@@ -9,8 +9,7 @@ The shell handles:
 - User input/output (terminal interaction)
 - Timing measurements
 - Coordination of the pipeline flow
-- Sub-operation recursion via call stack
-- Deferred operation processing
+- Secondary operation processing (restarts at Bucket gate, gates 0-1 remain locked)
 """
 
 from datetime import datetime
@@ -19,10 +18,9 @@ from mentalos.core.models import Session, Stack, ProblemPart, GateLog
 from mentalos.core.pipeline import (
     initial_session,
     record_gate_answer,
-    add_deferred_ops,
-    pop_deferred_op,
+    add_secondary_ops,
+    pop_secondary_op,
     reset_session_to_gate,
-    inject_sub_result,
     push_stack,
     pop_stack,
     is_stack_empty,
@@ -30,9 +28,6 @@ from mentalos.core.pipeline import (
     get_gate_prompt,
     is_execution_gate,
     is_primary_op_lock_gate,
-    is_interpretation_gate,
-    should_trigger_sub_operation,
-    should_return_from_sub_op,
     format_session_summary,
 )
 from mentalos.config.settings import Config
@@ -134,7 +129,6 @@ def run_single_gate(
     Execute a single gate interaction with the user.
     
     Displays the gate prompt, measures response time, and records the answer.
-    Handles special commands like :defer during Execution gate.
     
     Args:
         session: Current session state
@@ -154,135 +148,65 @@ def run_single_gate(
     return updated_session, answer
 
 
-def run_sub_operation_pipeline(
-    sub_op_desc: str,
-    parent_session: Session,
-    stack: Stack,
-    config: Config
-) -> tuple[Session, Stack]:
-    """
-    Run a shortened pipeline for a sub-operation.
-    
-    Creates a new session for the sub-task, runs through the abbreviated
-    gate sequence (Intent → Primary Op → Tool → Execution), and returns
-    the result. Supports nested :defer commands recursively.
-    
-    Args:
-        sub_op_desc: Description of the sub-operation to perform
-        parent_session: The parent session that triggered this sub-op
-        stack: Current call stack
-        config: Configuration settings
-    
-    Returns:
-        Tuple of (parent session with injected result, updated stack)
-    """
-    # Create a sub-operation session using parent's question context
-    sub_session = Session(
-        part_id=f"{parent_session.part_id}.sub",
-        question=f"Sub-operation: {sub_op_desc}",
-        logs=(),
-        deferred_ops=(),
-        current_gate_idx=0,
-        sub_operation_result=None,
-        parent_execution_answer=None,
-    )
-    
-    # Push parent onto stack
-    new_stack = push_stack(stack, parent_session)
-    
-    # Run the sub-operation gates
-    sub_op_gate_names = config.sub_op_gates
-    
-    for gate_name in sub_op_gate_names:
-        # Check if we've completed all gates
-        current_gate = get_current_gate_name(sub_session, config)
-        if current_gate is None:
-            break
-        
-        # Execute the gate
-        sub_session, answer = run_single_gate(sub_session, gate_name, config)
-        
-        # Handle :defer recursively
-        if is_execution_gate(gate_name) and should_trigger_sub_operation(answer):
-            nested_desc = get_user_input("Describe nested sub-operation: ")
-            sub_session, new_stack = run_sub_operation_pipeline(
-                nested_desc, sub_session, new_stack, config
-            )
-            # Inject the nested result
-            sub_session = inject_sub_result(sub_session, sub_session.sub_operation_result)
-        
-        # Handle :return command
-        if should_return_from_sub_op(answer):
-            # Pop parent from stack and return
-            popped_parent, remaining_stack = pop_stack(new_stack)
-            result_text = format_session_summary(sub_session)
-            popped_parent = inject_sub_result(popped_parent, result_text)
-            return popped_parent, remaining_stack
-    
-    # Sub-operation completed normally - extract result from Execution log
-    execution_result = "Sub-operation completed"
-    for log in reversed(sub_session.logs):
-        if log.gate == "Execution":
-            execution_result = log.answer
-            break
-    
-    # Pop parent from stack
-    popped_parent, remaining_stack = pop_stack(new_stack)
-    
-    # Inject result into parent
-    popped_parent = inject_sub_result(popped_parent, execution_result)
-    
-    return popped_parent, remaining_stack
-
-
-def process_deferred_operations(
+def process_secondary_operations(
     session: Session,
-    stack: Stack,
     config: Config
-) -> tuple[Session, Stack]:
+) -> Session:
     """
-    Process the queue of deferred operations after primary execution completes.
+    Process the queue of secondary operations after primary execution completes.
     
-    Prompts user whether to process each deferred operation. If yes,
-    resets the session to the configured start gate and continues.
+    Prompts user whether to process each secondary operation. If yes,
+    resets the session to the Bucket gate (index 2) and continues.
+    Gates 0-1 (Requested Output, Primary Operation) remain globally locked.
     
     Args:
         session: Current session state
-        stack: Current call stack
         config: Configuration settings
     
     Returns:
-        Tuple of (final session, unchanged stack)
+        Final session after all secondary ops processed (or skipped)
     """
     current_session = session
     
-    while current_session.deferred_ops:
-        print(f"\nDeferred operations remaining: {current_session.deferred_ops}")
-        proceed = get_user_input("Process next deferred operation? (y/n): ")
+    while current_session.secondary_ops:
+        print(f"\nSecondary operations remaining: {current_session.secondary_ops}")
+        proceed = get_user_input("Process next secondary operation? (y/n): ")
         
         if proceed.lower() != 'y':
-            print("Skipping remaining deferred operations.")
+            print("Skipping remaining secondary operations.")
             break
         
-        # Pop the next deferred operation
-        current_session, next_op = pop_deferred_op(current_session)
+        # Pop the next secondary operation
+        current_session, next_op = pop_secondary_op(current_session)
         
         if next_op is None:
             break
         
-        print(f"\nProcessing deferred operation: {next_op}")
+        print(f"\nProcessing secondary operation: {next_op}")
+        print(f"Note: Requested Output and Primary Operation remain locked.")
         
-        # Reset session to the configured start gate for deferred ops
+        # Reset session to Bucket gate (index 2) for secondary ops
         current_session = reset_session_to_gate(
             current_session,
-            config.deferred_start_gate_idx
+            config.secondary_op_start_gate_idx
         )
         
         # Continue the main pipeline loop from the reset gate
-        # This is handled by returning to the caller which continues the loop
-        return current_session, stack
+        # Process this secondary op through remaining gates
+        while True:
+            gate_name = get_current_gate_name(current_session, config)
+            
+            if gate_name is None:
+                break
+            
+            current_session, answer = run_single_gate(current_session, gate_name, config)
+            
+            # No nested sub-ops during secondary ops for now
+            # Just continue through the gates
+        
+        # Loop back to check for more secondary ops
     
-    return current_session, stack
+    return current_session
 
 
 def run_part_pipeline(
@@ -293,7 +217,7 @@ def run_part_pipeline(
     Run the complete gate pipeline for a single problem part.
     
     This is the main orchestration function that walks through all gates,
-    handles :defer sub-operations, and processes deferred operations queue.
+    handles secondary operations queue after primary completion.
     
     Args:
         part: The problem part to process
@@ -303,7 +227,6 @@ def run_part_pipeline(
         Completed Session with all gate logs
     """
     session = initial_session(part)
-    stack: Stack = ()
     
     while True:
         # Get current gate name
@@ -311,69 +234,21 @@ def run_part_pipeline(
         
         # Check if all gates completed
         if gate_name is None:
-            # Check for deferred operations after Interpretation
-            if session.deferred_ops:
-                session, stack = process_deferred_operations(session, stack, config)
-                # If we reset for deferred ops, continue the loop
-                if session.current_gate_idx < len(config.gate_sequence):
-                    continue
+            # Check for secondary operations after Interpretation
+            if session.secondary_ops:
+                session = process_secondary_operations(session, config)
             break
         
         # Execute the current gate
         session, answer = run_single_gate(session, gate_name, config)
         
-        # Handle :defer command during Execution gate
-        if is_execution_gate(gate_name) and should_trigger_sub_operation(answer):
-            sub_op_desc = get_user_input("Describe sub-operation: ")
-            session, stack = run_sub_operation_pipeline(
-                sub_op_desc, session, stack, config
-            )
-            # After returning, we need to record the sub-result as the execution answer
-            # Find the elapsed time from the original Execution gate attempt
-            exec_log = None
-            for log in reversed(session.logs):
-                if log.gate == "Execution":
-                    exec_log = log
-                    break
-            
-            if exec_log:
-                # Update the execution log with the sub-operation result
-                # We need to replace the last log entry
-                old_logs = session.logs[:-1]
-                new_log = GateLog(
-                    gate="Execution",
-                    answer=f"[Sub-operation result]: {session.sub_operation_result}",
-                    time_sec=exec_log.time_sec
-                )
-                session = Session(
-                    part_id=session.part_id,
-                    question=session.question,
-                    logs=(*old_logs, new_log),
-                    deferred_ops=session.deferred_ops,
-                    current_gate_idx=session.current_gate_idx,
-                    sub_operation_result=None,  # Clear after injecting
-                    parent_execution_answer=session.parent_execution_answer,
-                )
-        
-        # Handle deferred ops collection after Primary Operation Lock
+        # Handle secondary ops collection after Primary Operation Lock (gate index 1)
         if is_primary_op_lock_gate(gate_name):
             deferred_input = get_user_input(
-                "List secondary operations to defer (comma separated) or press Enter: "
+                "List secondary operations to process later (comma separated) or press Enter: "
             )
             if deferred_input:
-                session = add_deferred_ops(session, deferred_input)
-        
-        # Handle :return command (for sub-operations)
-        if should_return_from_sub_op(answer):
-            if not is_stack_empty(stack):
-                parent_session, stack = pop_stack(stack)
-                parent_session = inject_sub_result(
-                    parent_session,
-                    f"Returned from sub-operation at {gate_name}"
-                )
-                return parent_session
-            else:
-                print("Warning: :return used but no parent session exists.")
+                session = add_secondary_ops(session, deferred_input)
     
     return session
 
