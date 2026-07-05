@@ -122,6 +122,54 @@ class Config:
         "Decide",
     )
 
+# -----------------------------------------------------------------------------
+# FORMULA DATABASE & UNITS
+# -----------------------------------------------------------------------------
+
+@dataclass(frozen=True)
+class Formula:
+    """Immutable formula definition for the calculation engine."""
+    id: str
+    name: str
+    equation: str  # Human readable: "W = F * d"
+    python_expr: str  # Executable: "F * d"
+    result_var: str  # e.g., "W"
+    required_vars: tuple[str, ...]  # e.g., ("F", "d")
+    category: str
+
+
+FORMULA_DATABASE: tuple[Formula, ...] = (
+    # Mechanics - Work & Energy
+    Formula("work_parallel", "Work (Parallel Force)", "W = F_|| * d", "F_parallel * d", "W", ("F_parallel", "d"), "Mechanics"),
+    Formula("work_angle", "Work (Angled Force)", "W = F * d * cos(θ)", "F * d * math.cos(math.radians(theta))", "W", ("F", "d", "theta"), "Mechanics"),
+    Formula("kinetic_energy", "Kinetic Energy", "KE = 0.5 * m * v²", "0.5 * m * v**2", "KE", ("m", "v"), "Energy"),
+    Formula("potential_energy", "Gravitational PE", "PE = m * g * h", "m * 9.81 * h", "PE", ("m", "h"), "Energy"),
+    
+    # Vectors & Forces
+    Formula("force_x", "Force X-Component", "F_x = F * cos(θ)", "F * math.cos(math.radians(theta))", "F_x", ("F", "theta"), "Vectors"),
+    Formula("force_y", "Force Y-Component", "F_y = F * sin(θ)", "F * math.sin(math.radians(theta))", "F_y", ("F", "theta"), "Vectors"),
+    Formula("friction", "Friction Force", "f = μ * N", "mu * N", "f", ("mu", "N"), "Mechanics"),
+    Formula("newton_2", "Newton's Second Law", "F = m * a", "m * a", "F", ("m", "a"), "Mechanics"),
+    Formula("net_force", "Net Force (1D)", "F_net = ΣF", "sum(forces)", "F_net", ("forces",), "Mechanics"),
+    
+    # Kinematics
+    Formula("velocity_const_acc", "Velocity w/ Const Accel", "v = v₀ + a * t", "v0 + a * t", "v", ("v0", "a", "t"), "Kinematics"),
+    Formula("displacement_const_acc", "Displacement w/ Const Accel", "d = v₀ * t + ½ * a * t²", "v0 * t + 0.5 * a * t**2", "d", ("v0", "a", "t"), "Kinematics"),
+    Formula("velocity_displacement", "v² = v₀² + 2aΔx", "v0**2 + 2 * a * d", "v_final_sq", ("v0", "a", "d"), "Kinematics"),
+)
+
+UNITS: dict[str, list[str]] = {
+    "Force": ["N", "kN", "lbf"],
+    "Distance": ["m", "km", "cm", "ft", "mi"],
+    "Mass": ["kg", "g", "lb", "slug"],
+    "Time": ["s", "min", "h", "ms"],
+    "Energy": ["J", "kJ", "cal", "kcal"],
+    "Velocity": ["m/s", "km/h", "mph", "ft/s"],
+    "Acceleration": ["m/s²", "ft/s²"],
+    "Angle": ["deg", "rad"],
+    "Pressure": ["Pa", "kPa", "atm", "bar", "psi"],
+}
+
 
 # Single instance for import throughout the application
 DEFAULT_CONFIG = Config()

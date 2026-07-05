@@ -10,17 +10,25 @@ The shell handles:
 - Timing measurements
 - Coordination of the pipeline flow
 - Secondary operation processing (restarts at Bucket gate, gates 0-1 remain locked)
+- Variable catalog management and formula selection
+- Dependency-aware execution blocking
 """
 
 from datetime import datetime
 
-from mentalos.core.models import Session, Stack, ProblemPart, GateLog
+from mentalos.core.models import Session, Stack, ProblemPart, GateLog, Variable
 from mentalos.core.pipeline import (
     initial_session,
     record_gate_answer,
     add_secondary_ops,
     pop_secondary_op,
     reset_session_to_gate,
+    select_formula_in_session,
+    add_variable_to_catalog,
+    get_missing_dependencies,
+    execute_calculation,
+    get_all_formulas,
+    get_formulas_for_operation,
     push_stack,
     pop_stack,
     is_stack_empty,
@@ -30,7 +38,7 @@ from mentalos.core.pipeline import (
     is_primary_op_lock_gate,
     format_session_summary,
 )
-from mentalos.config.settings import Config
+from mentalos.config.settings import Config, UNITS
 
 
 def get_user_input(prompt: str) -> str:
@@ -120,6 +128,168 @@ def collect_problem_parts() -> tuple[ProblemPart, ...]:
     return tuple(parts)
 
 
+def display_formula_menu(formulas, operation: str = "") -> None:
+    """Display available formulas in a numbered menu."""
+    print(f"\n{'='*50}")
+    if operation:
+        print(f"Available Formulas for '{operation}':")
+    else:
+        print("Available Formulas:")
+    print(f"{'='*50}")
+    
+    for i, formula in enumerate(formulas, 1):
+        print(f"  [{i}] {formula.name}")
+        print(f"      Equation: {formula.equation}")
+        print(f"      Requires: {', '.join(formula.required_vars)}")
+        print()
+
+
+def select_formula_interactive(session: Session, operation: str) -> Session:
+    """
+    Interactive formula selection with dependency awareness.
+    
+    Shows available formulas, lets user pick one, then checks for missing variables.
+    If variables are missing, prompts user to add them first.
+    """
+    formulas = get_formulas_for_operation(operation)
+    
+    while True:
+        display_formula_menu(formulas, operation)
+        
+        # Show current variable catalog
+        if session.variable_catalog:
+            print("\nCurrent Variables in Catalog:")
+            for name, var in session.variable_catalog.items():
+                print(f"  {name} = {var.value} {var.unit}")
+        else:
+            print("\nVariable Catalog: (empty)")
+        
+        choice = get_user_input("\nSelect formula number (or 'list' to see all, 'skip' to skip): ")
+        
+        if choice.lower() == 'skip':
+            print("Skipping formula selection.")
+            return session
+        
+        if choice.lower() == 'list':
+            formulas = get_all_formulas()
+            continue
+        
+        try:
+            idx = int(choice) - 1
+            if 0 <= idx < len(formulas):
+                selected_formula = formulas[idx]
+                session = select_formula_in_session(session, selected_formula.id)
+                
+                # Check for missing dependencies
+                missing = get_missing_dependencies(session)
+                if missing:
+                    print(f"\n⚠️  Missing dependencies: {', '.join(missing)}")
+                    print("You must add these variables before execution.")
+                    
+                    # Prompt to add missing variables
+                    for var_name in missing:
+                        print(f"\n--- Add Variable: {var_name} ---")
+                        value_str = get_user_input(f"Enter numeric value for {var_name}: ")
+                        unit = get_user_input(f"Enter unit for {var_name} (e.g., N, m, kg): ")
+                        
+                        try:
+                            value = float(value_str)
+                            var = Variable(name=var_name, value=value, unit=unit, source="given")
+                            session = add_variable_to_catalog(session, var)
+                            print(f"✓ Added {var_name} = {value} {unit}")
+                        except ValueError:
+                            print(f"Invalid value for {var_name}. Skipping.")
+                
+                return session
+            else:
+                print("Invalid selection. Try again.")
+        except ValueError:
+            print("Please enter a number.")
+
+
+def run_execution_gate(session: Session) -> tuple[Session, str]:
+    """
+    Execute the Execution gate with dependency checking.
+    
+    Blocks calculation until all required variables are present.
+    Shows formula, required variables, and current catalog status.
+    """
+    print("\n=== Execution ===")
+    
+    if session.selected_formula_id is None:
+        print("No formula selected. Cannot execute.")
+        answer = get_user_input("> ")
+        return session, answer
+    
+    # Get formula info
+    formula = next((f for f in get_all_formulas() if f.id == session.selected_formula_id), None)
+    if formula is None:
+        print("Formula not found.")
+        answer = get_user_input("> ")
+        return session, answer
+    
+    print(f"Formula: {formula.equation}")
+    print(f"Required variables: {', '.join(formula.required_vars)}")
+    
+    # Check dependencies
+    missing = get_missing_dependencies(session)
+    
+    if missing:
+        print(f"\n❌ BLOCKED: Missing dependencies: {', '.join(missing)}")
+        print("\nYou must resolve these variables first:")
+        
+        for var_name in missing:
+            print(f"\n--- Resolve: {var_name} ---")
+            print("Options:")
+            print("  1. Enter value directly (if given in problem)")
+            print("  2. Calculate from another formula (select 'defer')")
+            
+            choice = get_user_input("\nChoose (1/2/defer): ")
+            
+            if choice.lower() == 'defer':
+                print("Deferring execution. Please process secondary operations first.")
+                return session, ":defer"
+            
+            # Option 1: Enter value directly
+            value_str = get_user_input(f"Enter numeric value for {var_name}: ")
+            unit = get_user_input(f"Enter unit for {var_name}: ")
+            
+            try:
+                value = float(value_str)
+                var = Variable(name=var_name, value=value, unit=unit, source="given")
+                session = add_variable_to_catalog(session, var)
+                print(f"✓ Added {var_name} = {value} {unit}")
+            except ValueError:
+                print("Invalid value. Aborting execution.")
+                return session, "error: invalid input"
+        
+        # Re-check after adding variables
+        missing = get_missing_dependencies(session)
+        if missing:
+            print("\nStill missing variables. Deferring execution.")
+            return session, ":defer"
+    
+    # All dependencies met - proceed with calculation
+    print("\n✓ All dependencies satisfied. Executing calculation...")
+    
+    new_session, result, error = execute_calculation(session)
+    
+    if error:
+        print(f"❌ Error: {error}")
+        answer = get_user_input("> ")
+        return session, answer
+    
+    print(f"\n✓ Result: {formula.result_var} = {result}")
+    
+    # Show updated catalog
+    print("\nUpdated Variable Catalog:")
+    for name, var in new_session.variable_catalog.items():
+        print(f"  {name} = {var.value} {var.unit} ({var.source})")
+    
+    answer = str(result)
+    return new_session, answer
+
+
 def run_single_gate(
     session: Session,
     gate_name: str,
@@ -148,9 +318,40 @@ def run_single_gate(
     return updated_session, answer
 
 
+def run_tool_gate_with_formula(session: Session, operation: str) -> tuple[Session, str]:
+    """
+    Special handling for Tool gate: select formula from database.
+    
+    Shows formula menu filtered by operation type, handles dependency checking.
+    """
+    print("\n=== Tool ===")
+    print("What method operates within that model? Select from formula database.")
+    
+    # Use interactive formula selector
+    new_session = select_formula_interactive(session, operation)
+    
+    if new_session.selected_formula_id:
+        formula = next((f for f in get_all_formulas() if f.id == new_session.selected_formula_id), None)
+        if formula:
+            answer = formula.equation
+        else:
+            answer = "Formula selected"
+    else:
+        answer = get_user_input("> Enter custom formula: ")
+    
+    # Record the answer but keep the session with formula selection
+    start = datetime.now()
+    end = datetime.now()
+    elapsed = (end - start).total_seconds()
+    recorded_session = record_gate_answer(new_session, "Tool", answer, elapsed)
+    
+    return recorded_session, answer
+
+
 def process_secondary_operations(
     session: Session,
-    config: Config
+    config: Config,
+    primary_operation: str
 ) -> Session:
     """
     Process the queue of secondary operations after primary execution completes.
@@ -162,6 +363,7 @@ def process_secondary_operations(
     Args:
         session: Current session state
         config: Configuration settings
+        primary_operation: The locked primary operation (for formula filtering)
     
     Returns:
         Final session after all secondary ops processed (or skipped)
@@ -199,10 +401,16 @@ def process_secondary_operations(
             if gate_name is None:
                 break
             
-            current_session, answer = run_single_gate(current_session, gate_name, config)
-            
-            # No nested sub-ops during secondary ops for now
-            # Just continue through the gates
+            # Special handling for Tool gate with formula selection
+            if gate_name == "Tool":
+                current_session, answer = run_tool_gate_with_formula(
+                    current_session, 
+                    next_op  # Use current secondary op for filtering
+                )
+            elif gate_name == "Execution":
+                current_session, answer = run_execution_gate(current_session)
+            else:
+                current_session, answer = run_single_gate(current_session, gate_name, config)
         
         # Loop back to check for more secondary ops
     
@@ -227,6 +435,7 @@ def run_part_pipeline(
         Completed Session with all gate logs
     """
     session = initial_session(part)
+    locked_primary_operation = None
     
     while True:
         # Get current gate name
@@ -236,14 +445,25 @@ def run_part_pipeline(
         if gate_name is None:
             # Check for secondary operations after Interpretation
             if session.secondary_ops:
-                session = process_secondary_operations(session, config)
+                session = process_secondary_operations(session, config, locked_primary_operation or "Accumulate")
             break
         
-        # Execute the current gate
-        session, answer = run_single_gate(session, gate_name, config)
+        # Special handling for Tool gate with formula selection
+        if gate_name == "Tool":
+            session, answer = run_tool_gate_with_formula(
+                session, 
+                locked_primary_operation or "Accumulate"
+            )
+        # Special handling for Execution gate with dependency checking
+        elif gate_name == "Execution":
+            session, answer = run_execution_gate(session)
+        else:
+            # Execute the current gate normally
+            session, answer = run_single_gate(session, gate_name, config)
         
-        # Handle secondary ops collection after Primary Operation Lock (gate index 1)
+        # Store locked primary operation for later use
         if is_primary_op_lock_gate(gate_name):
+            locked_primary_operation = answer
             deferred_input = get_user_input(
                 "List secondary operations to process later (comma separated) or press Enter: "
             )

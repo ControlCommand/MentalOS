@@ -7,12 +7,20 @@ Side effects are isolated to the shell layer.
 
 The pipeline is organized as a series of composable transformations that each
 handle one aspect of session state evolution.
+
+Pipeline enforces priority-based workflow from DEFINITIONS.md:
+1. Requested Output (globally locked after first pass)
+2. Primary Operation Lock (Winner-Takes-All, globally locked)  
+3. Secondary Operations Queue
+4. For each operation: Bucket → Model → Tool → Execution → Interpretation
+5. Dependency resolution blocks execution until all required variables exist
 """
 
 from datetime import datetime
+import math
 
-from mentalos.core.models import Session, GateLog, Stack, ProblemPart
-from mentalos.config.settings import Config
+from mentalos.core.models import Session, GateLog, Stack, ProblemPart, Variable
+from mentalos.config.settings import Config, FORMULA_DATABASE, Formula
 
 
 def initial_session(part: ProblemPart) -> Session:
@@ -31,6 +39,9 @@ def initial_session(part: ProblemPart) -> Session:
         is_primary_lock_complete=False,
         locked_requested_output=None,
         locked_primary_operation=None,
+        variable_catalog={},
+        selected_formula_id=None,
+        pending_dependencies=(),
     )
 
 
@@ -86,6 +97,9 @@ def record_gate_answer(
         is_primary_lock_complete=is_lock_complete,
         locked_requested_output=locked_req_output,
         locked_primary_operation=locked_prim_op,
+        variable_catalog=session.variable_catalog,
+        selected_formula_id=session.selected_formula_id,
+        pending_dependencies=session.pending_dependencies,
     )
 
 
@@ -117,6 +131,9 @@ def add_secondary_ops(session: Session, ops_string: str) -> Session:
         is_primary_lock_complete=session.is_primary_lock_complete,
         locked_requested_output=session.locked_requested_output,
         locked_primary_operation=session.locked_primary_operation,
+        variable_catalog=session.variable_catalog,
+        selected_formula_id=session.selected_formula_id,
+        pending_dependencies=session.pending_dependencies,
     )
 
 
@@ -147,6 +164,9 @@ def pop_secondary_op(session: Session) -> tuple[Session, str | None]:
         is_primary_lock_complete=session.is_primary_lock_complete,
         locked_requested_output=session.locked_requested_output,
         locked_primary_operation=session.locked_primary_operation,
+        variable_catalog=session.variable_catalog,
+        selected_formula_id=session.selected_formula_id,
+        pending_dependencies=session.pending_dependencies,
     ), next_op
 
 
@@ -173,23 +193,23 @@ def reset_session_to_gate(session: Session, gate_idx: int) -> Session:
         is_primary_lock_complete=session.is_primary_lock_complete,
         locked_requested_output=session.locked_requested_output,
         locked_primary_operation=session.locked_primary_operation,
+        variable_catalog=session.variable_catalog,
+        selected_formula_id=None,  # Reset formula selection for new operation
+        pending_dependencies=(),
     )
 
 
-def inject_sub_result(session: Session, result: str) -> Session:
+def select_formula_in_session(session: Session, formula_id: str) -> Session:
     """
-    Inject a sub-operation result into the parent session.
+    Pure function: Select a formula from the database for the current operation.
     
-    Called when returning from a sub-operation. The result
-    becomes the execution answer for the parent's Execution gate.
-    
-    Args:
-        session: Parent session state
-        result: Result string from the sub-operation
-    
-    Returns:
-        New Session with sub_operation_result set
+    This sets the formula that will be used for calculation and identifies
+    which variables are required (pending dependencies).
     """
+    formula = next((f for f in FORMULA_DATABASE if f.id == formula_id), None)
+    if formula is None:
+        raise ValueError(f"Formula '{formula_id}' not found in database")
+    
     return Session(
         part_id=session.part_id,
         question=session.question,
@@ -199,7 +219,100 @@ def inject_sub_result(session: Session, result: str) -> Session:
         is_primary_lock_complete=session.is_primary_lock_complete,
         locked_requested_output=session.locked_requested_output,
         locked_primary_operation=session.locked_primary_operation,
+        variable_catalog=session.variable_catalog,
+        selected_formula_id=formula_id,
+        pending_dependencies=formula.required_vars,
     )
+
+
+def add_variable_to_catalog(session: Session, variable: Variable) -> Session:
+    """
+    Pure function: Add or update a variable in the catalog.
+    
+    The variable catalog is the single source of truth for all values.
+    """
+    new_catalog = {**session.variable_catalog, variable.name: variable}
+    return Session(
+        part_id=session.part_id,
+        question=session.question,
+        logs=session.logs,
+        secondary_ops=session.secondary_ops,
+        current_gate_idx=session.current_gate_idx,
+        is_primary_lock_complete=session.is_primary_lock_complete,
+        locked_requested_output=session.locked_requested_output,
+        locked_primary_operation=session.locked_primary_operation,
+        variable_catalog=new_catalog,
+        selected_formula_id=session.selected_formula_id,
+        pending_dependencies=session.pending_dependencies,
+    )
+
+
+def get_missing_dependencies(session: Session) -> tuple[str, ...]:
+    """
+    Pure function: Check which required variables are missing from the catalog.
+    
+    Returns tuple of variable names that must be calculated before execution can proceed.
+    """
+    if session.selected_formula_id is None:
+        return ()
+    
+    formula = next((f for f in FORMULA_DATABASE if f.id == session.selected_formula_id), None)
+    if formula is None:
+        return ()
+    
+    missing = tuple(
+        var for var in formula.required_vars 
+        if var not in session.variable_catalog
+    )
+    return missing
+
+
+def execute_calculation(session: Session) -> tuple[Session, float | None, str | None]:
+    """
+    Pure function: Execute the selected formula if all dependencies are met.
+    
+    Returns (new_session, result_value, error_message) where:
+    - result_value is None if dependencies missing or error occurred
+    - error_message contains description of what went wrong (if any)
+    
+    This is the computational core that evaluates the python expression safely.
+    """
+    if session.selected_formula_id is None:
+        return session, None, "No formula selected"
+    
+    missing = get_missing_dependencies(session)
+    if missing:
+        # Cannot execute yet - dependencies missing
+        return session, None, f"Missing dependencies: {', '.join(missing)}"
+    
+    formula = next((f for f in FORMULA_DATABASE if f.id == session.selected_formula_id), None)
+    if formula is None:
+        return session, None, "Formula not found"
+    
+    # Build evaluation context from variable catalog
+    eval_context = {
+        "math": math,
+        **{name: var.value for name, var in session.variable_catalog.items()}
+    }
+    
+    try:
+        result = eval(formula.python_expr, {"__builtins__": {}}, eval_context)
+        
+        # Store result in catalog
+        result_var = Variable(
+            name=formula.result_var,
+            value=float(result),
+            unit="",  # Would need unit tracking system
+            formula_id=formula.id,
+            source="calculated",
+        )
+        
+        new_session = add_variable_to_catalog(session, result_var)
+        return new_session, float(result), None
+        
+    except Exception as e:
+        # Return session unchanged, no result
+        return session, None, f"Calculation error: {str(e)}"
 
 
 # Stack management functions - pure, immutable operations
@@ -293,26 +406,6 @@ def is_interpretation_gate(gate_name: str) -> bool:
     return gate_name == "Interpretation"
 
 
-def should_trigger_sub_operation(answer: str) -> bool:
-    """
-    Check if the user's answer indicates a sub-operation trigger.
-    
-    The special command ':sub' signals that the current task requires
-    a nested sub-operation to complete first.
-    """
-    return answer.strip().lower() == ":sub"
-
-
-def should_return_from_sub_op(answer: str) -> bool:
-    """
-    Check if the user wants to return from a sub-operation.
-    
-    The special command ':return' completes the sub-operation and
-    returns control to the parent session.
-    """
-    return answer.strip().lower() == ":return"
-
-
 def format_session_summary(session: Session) -> str:
     """
     Create a human-readable summary of a session for audit purposes.
@@ -338,4 +431,34 @@ def format_session_summary(session: Session) -> str:
     if session.secondary_ops:
         lines.append(f"\nPending Secondary Ops: {', '.join(session.secondary_ops)}")
     
+    if session.variable_catalog:
+        lines.append("\nVariable Catalog:")
+        for name, var in session.variable_catalog.items():
+            lines.append(f"  {name} = {var.value} {var.unit} ({var.source})")
+    
     return "\n".join(lines)
+
+
+def get_all_formulas() -> tuple[Formula, ...]:
+    """Pure function: Return all available formulas."""
+    return FORMULA_DATABASE
+
+
+def get_formulas_for_operation(operation: str) -> tuple[Formula, ...]:
+    """
+    Filter formulas relevant to a specific operation type.
+    
+    Maps operations to likely formula categories.
+    """
+    op_to_category = {
+        "Accumulate": ["Mechanics", "Energy"],
+        "Transform": ["Vectors"],
+        "Change": ["Kinematics", "Mechanics"],
+        "Estimate": ["Energy"],
+    }
+    
+    relevant_categories = op_to_category.get(operation, [])
+    if not relevant_categories:
+        return FORMULA_DATABASE
+    
+    return tuple(f for f in FORMULA_DATABASE if f.category in relevant_categories)
