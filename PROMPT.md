@@ -137,10 +137,6 @@ Implement the full MentalOS workflow:
    *“You are a MentalOS auditor. Point out any vague, incomplete, or incorrect gate answers. Do NOT provide solutions, only precise feedback.”*  
    Display the LLM’s response alongside a formatted table of the user’s logs.
 
-**Logic Guidance (Pseudocode) – Illustrative, not prescriptive:**
-
-Below are conceptual snippets to convey the intended data‑flow patterns. Adapt as needed while keeping the functional purity and immutable updates.
-
 **Technical Constraints:**
 
 Language: Python 3.12+.
@@ -158,6 +154,33 @@ All pure functions must have docstrings; comments explain why, not what.
 - The complete project directory with all files fully implemented and ready to run. Include a brief README.md explaining how to run and the high‑level architecture.
 - Exercise your architectural judgment – if a better decomposition exists than the one outlined in this request, adopt it and document the rationale.
 - Do not leave any TODO or placeholder. Every line of code must be production‑clean.
+
+Based on the current implementation of the Dependency-First MentalOS, propose the next phase of development focusing on:
+
+1. **Quality of Life Improvements**:
+   - Add unit conversion automation (e.g., auto-convert km/h to m/s).
+   - Implement "smart defaults" for common constants (g=9.81, k_e, etc.).
+   - Create a visual dependency graph display (ASCII or simple GUI) showing the "onion layers" of operations.
+   - Add undo/redo functionality for variable entries and operation choices.
+
+2. **Backend Adjustments**:
+   - Migrate the in-memory Variable Catalog to a lightweight SQLite database for session persistence and history tracking.
+   - Implement a formal DAG (Directed Acyclic Graph) engine to detect circular dependencies automatically.
+   - Add dimensional analysis validation to prevent unit mismatches (e.g., adding Joules to Newtons).
+   - Optimize the formula matcher to suggest relevant formulas based on available variables.
+
+3. **Next Steps & Project Goals**:
+   - Define the roadmap for a TUI (Text User Interface) with rich widgets (dropdowns, tables) using libraries like `rich` or `textual`.
+   - Plan for a web-based frontend (React/Vue) that consumes the existing functional core via a FastAPI backend.
+   - Expand the Formula Database to cover Electromagnetism, Thermodynamics, and Calculus.
+   - Integrate an LLM-powered "Socratic Tutor" mode that asks guiding questions instead of just accepting inputs.
+
+4. **Architectural Refinements**:
+   - Ensure strict adherence to the "Pure Functional Core, Imperative Shell" architecture as we add stateful features (DB, UI).
+   - Refine the `PipelineState` to support checkpointing and resuming sessions.
+   - Formalize the "Winner-Takes-All" tie-breaking logic with more granular heuristics.
+
+Provide a prioritized list of these initiatives with estimated complexity and impact on the user experience.
   
 <|im_end|>
 
