@@ -155,7 +155,7 @@ FORMULA_DATABASE: tuple[Formula, ...] = (
     # Kinematics
     Formula("velocity_const_acc", "Velocity w/ Const Accel", "v = v₀ + a * t", "v0 + a * t", "v", ("v0", "a", "t"), "Kinematics"),
     Formula("displacement_const_acc", "Displacement w/ Const Accel", "d = v₀ * t + ½ * a * t²", "v0 * t + 0.5 * a * t**2", "d", ("v0", "a", "t"), "Kinematics"),
-    Formula("velocity_displacement", "v² = v₀² + 2aΔx", "v0**2 + 2 * a * d", "v_final_sq", ("v0", "a", "d"), "Kinematics"),
+    Formula("velocity_displacement", "Velocity w/ displacement no time","v² = v₀² + 2aΔx", "v0**2 + 2 * a * d", "v_final_sq", ("v0", "a", "d"), "Kinematics"),
 )
 
 UNITS: dict[str, list[str]] = {
