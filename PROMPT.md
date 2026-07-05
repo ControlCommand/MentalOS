@@ -71,11 +71,12 @@ Before finalizing any response, mentally audit your code against these 10 core p
 
 <|im_start|>user
 
-Write a complete, modular Python (3.12+) program for MentalOS – an interactive cognitive training tool that walks the user through a strict, timed, 10‑gate pipeline for solving physics/math problems, supports multi‑part questions, a Winner‑Takes‑All lock with deferred operations, and a recursive sub‑operation stack, ending with an LLM‑powered audit.
+Write a complete, modular Python (3.12+) program for MentalOS – an interactive cognitive training tool that walks the user through a strict, timed, workflow for solving physics/math problems, supports multi‑part questions, a Winner‑Takes‑All lock with deferred operations, and a recursive sub‑operation stack, ending with an LLM‑powered audit.
 
 **Paradigm & Quality Bar (inherited from system prompt):**
 - Purely functional, data‑oriented, no OOP (no classes, inheritance, mutable objects except inside a single imperative I/O shell).
-- Use immutable data structures (`frozen=True` dataclasses, `NamedTuple`, `MappingProxyType`).
+- Use immutable data structures (`frozen=True` dataclasses, `NamedTuple`, `MappingProxyType`) where necessary.
+- Use databases and DAG frameworks adherant to the industry standard.
 - Pure functions only; side‑effects isolated to the imperative shell.
 - Full Python 3.12+ features, exhaustive type hints, `match`/`case` where sensible.
 - Complete, production‑ready, zero placeholders. Critical thinking applied – don't just transliterate specs; propose better structure if it improves clarity, maintainability, or correctness.
@@ -98,8 +99,8 @@ Implement the full MentalOS workflow:
    - Scope Lock (constraints)
    - Intent (asker’s motivation)
    - Requested Output (precise output type, e.g., “Work_app”)
-   - Domain Bucket
-   - Primary Operation Lock (Winner‑Takes‑All: user locks one operation)
+   - Primary Operation Lock (Winner‑Takes‑All: user locks one operation)   
+   - Bucket
    - Model (theorem/concept)
    - Tool (formula/method)
    - Execution (final answer or triggers sub‑operation)
@@ -139,110 +140,6 @@ Implement the full MentalOS workflow:
 **Logic Guidance (Pseudocode) – Illustrative, not prescriptive:**
 
 Below are conceptual snippets to convey the intended data‑flow patterns. Adapt as needed while keeping the functional purity and immutable updates.
-
-*Session update pattern (all pure):*
-```python
-@dataclass(frozen=True)
-class Session:
-    part_id: str
-    question: str
-    logs: tuple[GateLog, ...]
-    deferred_ops: tuple[str, ...]
-    current_gate: int  # index into gate_sequence
-
-def record_gate(s: Session, gate: str, answer: str, elapsed: float) -> Session:
-    new_log = GateLog(gate=gate, answer=answer, time_sec=elapsed)
-    return Session(
-        part_id=s.part_id,
-        question=s.question,
-        logs=(*s.logs, new_log),
-        deferred_ops=s.deferred_ops,
-        current_gate=s.current_gate + 1,
-    )
-```
-*Imperative shell gate loop (simplified):*
-
-```python
-def run_part(question: str, config: Config) -> Session:
-    s = initial_session(question)
-    for gate_idx, gate_name in enumerate(config.gate_sequence):
-        if gate_idx != s.current_gate:
-            continue  # skip if already advanced (e.g., after deferred ops)
-        prompt = config.gate_prompts[gate_name]
-        print(f"=== {gate_name} ===")
-        print(prompt)
-        start = datetime.now()
-        answer = input("> ").strip()
-        elapsed = (datetime.now() - start).total_seconds()
-        # Handle special commands
-        if gate_name == "Execution" and answer == ":defer":
-            sub_op_desc = input("Describe sub-operation: ")
-            # Push current session onto stack, create sub-session
-            stack = push(stack, s)
-            s = run_sub_operation(sub_op_desc, stack, config)
-            stack, sub_result = pop(stack)
-            # Inject result back into parent Execution answer
-            s = record_gate(s, "Execution", sub_result, elapsed)  # simplified
-        else:
-            s = record_gate(s, gate_name, answer, elapsed)
-        # After primary lock, handle deferred ops collection
-        if gate_name == "Primary Operation Lock":
-            deferred = input("Secondary ops (comma separated) or Enter: ")
-            if deferred:
-                s = add_deferred_ops(s, deferred)
-        # After Interpretation, process deferred ops queue
-        if gate_name == "Interpretation" and s.deferred_ops:
-            s = process_deferred_ops(s, config)
-    return s
-```
-
-*Stack management (pure, immutable):*
-
-```python
-Stack = tuple  # immutable stack of sessions
-
-def push(stack: Stack, session: Session) -> Stack:
-    return (session, *stack)
-
-def pop(stack: Stack) -> tuple[Session, Stack]:
-    return stack[0], stack[1:]
-Deferred ops loop:
-
-python
-def process_deferred_ops(s: Session, config: Config) -> Session:
-    while s.deferred_ops:
-        print(f"Deferred ops remaining: {s.deferred_ops}")
-        ans = input("Process next deferred operation? (y/n): ").lower()
-        if ans != 'y':
-            break
-        next_op = s.deferred_ops[0]
-        s = s._replace(deferred_ops=s.deferred_ops[1:])
-        # Reset to a suitable start gate, e.g., Intent, and reuse same part question
-        s = s._replace(current_gate=config.deferred_start_gate_idx)
-        # Insert next_op into session (maybe as an implicit override)
-        s = set_current_operation(s, next_op)
-        # Run gates from that point onward (loop will continue from current_gate)
-        s = run_part_from_gate(s, config)
-    return s
-```
-
-*Main orchestration:*
-```python
-def main():
-    problem = input("Paste the entire problem:\n")
-    parts = get_parts_from_user()  # interactive
-    all_sessions = []
-    for part in parts:
-        session = run_part(part.text, config)
-        all_sessions.append(session)
-    audit_result = perform_audit(all_sessions, problem, config)
-    print("\n=== FINAL AUDIT ===")
-    print(audit_result)
-    print("\nDetailed logs:")
-    for session in all_sessions:
-        print(format_session_log(session))
-```
-These snippets are mere sketches. You are free to improve the decomposition, error handling, and flow control—provided the final result remains functionally pure and fully implements the requirements above.
 
 **Technical Constraints:**
 
