@@ -9,8 +9,11 @@ env/
 venv/
 .venv/
 .ENV
-.ENV.*
-.venv.bak/
+.ENV.local
+.env
+.env.local
+.env.*
+.venv.bak
 pip-log.txt
 pip-delete-this-directory.txt
 .tox/
@@ -21,7 +24,28 @@ nosetests.xml
 coverage.xml
 *.cover
 *.log
-.git/modules/
-.DS_Store
-Thumbs.db
+.git/refs/replace/
+.hypothesis/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Build and distribution artifacts
+dist/
+build/
+*.egg-info/
+.eggs/
+develop-eggs/
+.installed.cfg
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg
 ```

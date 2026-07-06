@@ -7,6 +7,12 @@ structured summary and communicates with a local LLM endpoint for feedback.
 
 The audit function is pure except for the HTTP request, which is isolated
 here in keeping with the imperative shell pattern.
+
+Architecture notes:
+- HTTP communication is isolated to send_audit_request()
+- All other functions are pure transformations
+- Error handling is comprehensive for network failures
+- Response parsing is defensive against malformed JSON
 """
 
 import json
@@ -47,7 +53,7 @@ def compile_audit_summary(
     ]
     
     for session in sessions:
-        lines.append(f"PART {session.part_id}")
+        lines.append(f"PART {session.part_id} (Depth: {session.depth})")
         lines.append(f"Question: {session.question}")
         lines.append("")
         lines.append("Gate Logs:")
@@ -63,6 +69,14 @@ def compile_audit_summary(
             lines.append("Variable Catalog:")
             for name, var in session.variable_catalog.items():
                 lines.append(f"  {name} = {var.value} {var.unit} ({var.source})")
+        
+        # Show locked values
+        if session.locked_requested_output:
+            lines.append("")
+            lines.append(f"Locked Requested Output: {session.locked_requested_output}")
+        
+        if session.locked_primary_operation:
+            lines.append(f"Locked Primary Operation: {session.locked_primary_operation}")
         
         lines.append("")
         lines.append("-" * 60)
@@ -88,6 +102,8 @@ def build_audit_request(
     Returns:
         Dictionary ready for JSON serialization
     """
+    from mentalos.config.settings import Config
+    
     return {
         "model": config.llm_model,
         "messages": [
@@ -122,6 +138,8 @@ def send_audit_request(
     Returns:
         AuditResult containing feedback or error information
     """
+    from mentalos.config.settings import Config
+    
     payload = build_audit_request(summary, config)
     
     try:
@@ -201,6 +219,8 @@ def perform_audit(
     Returns:
         AuditResult with feedback or error information
     """
+    from mentalos.config.settings import Config
+    
     summary = compile_audit_summary(problem_text, sessions)
     return send_audit_request(summary, config)
 
@@ -221,17 +241,18 @@ def format_audit_display(audit_result: AuditResult) -> str:
     lines = ["", "=" * 60, "FINAL AUDIT RESULTS", "=" * 60, ""]
     
     if audit_result.success:
-        lines.append("Audit completed successfully.")
+        lines.append("✓ Audit completed successfully.")
         lines.append("")
         lines.append("LLM Feedback:")
         lines.append("-" * 40)
         lines.append(audit_result.feedback)
         lines.append("-" * 40)
     else:
-        lines.append("Audit failed.")
+        lines.append("⚠ Audit failed.")
         lines.append(f"Error: {audit_result.error_message}")
         lines.append("")
         lines.append("Note: The LLM server may not be running.")
-        lines.append(f"Expected endpoint: http://localhost:1234/v1/chat/completions")
+        lines.append("Expected endpoint: http://localhost:1234/v1/chat/completions")
+        lines.append("To run MentalOS without LLM audit, the application will continue normally.")
     
     return "\n".join(lines)
