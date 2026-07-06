@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 """
 MentalOS - Interactive Cognitive Training Tool
 
@@ -20,6 +21,17 @@ Requirements:
     - Python 3.12+
     - requests library (pip install requests)
     - Optional: Local LLM server running at http://localhost:1234
+
+Features:
+    - Multi-part problem support (a, b, c, etc.)
+    - 7-gate cognitive pipeline with timed responses
+    - Winner-Takes-All primary operation lock
+    - Secondary operations queue with deferred processing
+    - Recursive sub-operation stack via :defer command
+    - Dependency-aware formula execution
+    - Unit conversion and normalization
+    - Smart defaults for physical constants
+    - LLM-powered audit feedback
 """
 
 import signal
@@ -40,7 +52,7 @@ def handle_interrupt(signum, frame):
     
     Ensures clean exit with appropriate message rather than stack trace.
     """
-    print("\n\nInterrupt received. Exiting MentalOS gracefully...")
+    print("\n\n⚠ Interrupt received. Exiting MentalOS gracefully...")
     sys.exit(0)
 
 
@@ -80,12 +92,12 @@ def main() -> None:
             session = run_part_pipeline(part, DEFAULT_CONFIG)
             sessions.append(session)
             
-            print(f"\nPart ({part.label}) complete.")
+            print(f"\n✓ Part ({part.label}) complete.")
         
         # Convert to tuple for immutability
         sessions_tuple = tuple(sessions)
         
-        # Step 3: Perform LLM-powered audit
+        # Step 3: Perform LLM-powered audit (optional - continues if unavailable)
         print("\nPerforming automated audit...")
         audit_result = perform_audit(problem_text, sessions_tuple, DEFAULT_CONFIG)
         audit_display = format_audit_display(audit_result)
@@ -95,12 +107,14 @@ def main() -> None:
         
     except KeyboardInterrupt:
         # Extra safety for interrupt handling
-        print("\n\nSession interrupted. Goodbye.")
+        print("\n\n⚠ Session interrupted. Goodbye.")
         sys.exit(0)
     except Exception as e:
         # Catch any unexpected errors and display gracefully
-        print(f"\nAn error occurred: {e}")
+        print(f"\n❌ An error occurred: {e}")
         print("Please report this issue if it persists.")
+        import traceback
+        traceback.print_exc()
         sys.exit(1)
 
 
