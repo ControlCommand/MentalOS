@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MentalOS Cognitive Engine</title>
+    <style>
+        :root {
+            --primary: #2563eb;
+            --primary-dark: #1d4ed8;
+            --secondary: #64748b;
+            --success: #22c55e;
+            --error: #ef4444;
+            --warning: #f59e0b;
+            --background: #0f172a;
+            --surface: #1e293b;
+            --surface-light: #334155;
+            --text: #f1f5f9;
+            --text-muted: #94a3b8;
+            --border: #475569;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            background: var(--background);
+            color: var(--text);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+
+        header {
+            text-align: center;
+            margin-bottom: 2rem;
+            padding-bottom: 2rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        h1 {
+            font-size: 2.5rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, var(--primary), #8b5cf6);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: var(--text-muted);
+            font-size: 1.1rem;
+        }
+
+        .grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 2rem;
+        }
+
+        @media (max-width: 1024px) {
+            .grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .card {
+            background: var(--surface);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border: 1px solid var(--border);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+            padding-bottom: 1rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .card-icon {
+            width: 32px;
+            height: 32px;
+            background: var(--primary);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+        }
+
+        .card-title {
+            font-size: 1.25rem;
+            font-weight: 600;
+        }
+
+        .form-group {
+            margin-bottom: 1.25rem;
+        }
+
+        label {
+            display: block;
+            font-size: 0.875rem;
+            font-weight: 500;
+            color: var(--text-muted);
+            margin-bottom: 0.5rem;
+        }
+
+        input, select, textarea {
+            width: 100%;
+            padding: 0.75rem 1rem;
+            background: var(--surface-light);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            color: var(--text);
+            font-size: 0.95rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+
+        input:focus, select:focus, textarea:focus {
+            outline: none;
+            border-color: var(--primary);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.2);
+        }
+
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+            font-family: 'Consolas', 'Monaco', monospace;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.875rem 1.5rem;
+            background: var(--primary);
+            color: white;
+            border: none;
+            border-radius: 8px;
+            font-size: 1rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+        }
+
+        .btn:hover {
+            background: var(--primary-dark);
+        }
+
+        .btn:active {
+            transform: scale(0.98);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background: var(--surface-light);
+        }
+
+        .btn-secondary:hover {
+            background: var(--border);
+        }
+
+        .result-box {
+            background: var(--background);
+            border-radius: 8px;
+            padding: 1rem;
+            font-family: 'Consolas', 'Monaco', monospace;
+            font-size: 0.875rem;
+            overflow-x: auto;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        .result-success {
+            border-left: 4px solid var(--success);
+        }
+
+        .result-error {
+            border-left: 4px solid var(--error);
+        }
+
+        .log-entry {
+            padding: 0.5rem 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.85rem;
+        }
+
+        .log-entry:last-child {
+            border-bottom: none;
+        }
+
+        .log-step {
+            color: var(--primary);
+            font-weight: 600;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+
+        .status-healthy {
+            background: rgba(34, 197, 94, 0.2);
+            color: var(--success);
+        }
+
+        .status-unhealthy {
+            background: rgba(239, 68, 68, 0.2);
+            color: var(--error);
+        }
+
+        .quick-actions {
+            display: flex;
+            gap: 0.75rem;
+            flex-wrap: wrap;
+            margin-top: 1rem;
+        }
+
+        .action-btn {
+            padding: 0.5rem 1rem;
+            background: var(--surface-light);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            color: var(--text);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .action-btn:hover {
+            background: var(--primary);
+            border-color: var(--primary);
+        }
+
+        .tabs {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
+            padding-bottom: 0.5rem;
+        }
+
+        .tab {
+            padding: 0.5rem 1rem;
+            background: transparent;
+            border: none;
+            color: var(--text-muted);
+            cursor: pointer;
+            border-radius: 6px 6px 0 0;
+            transition: all 0.2s;
+        }
+
+        .tab:hover {
+            color: var(--text);
+            background: var(--surface-light);
+        }
+
+        .tab.active {
+            color: var(--primary);
+            background: var(--surface-light);
+            font-weight: 600;
+        }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid var(--surface-light);
+            border-top-color: var(--primary);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+        .metrics-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 1rem;
+            margin-top: 1rem;
+        }
+
+        .metric-card {
+            background: var(--surface-light);
+            padding: 1rem;
+            border-radius: 8px;
+            text-align: center;
+        }
+
+        .metric-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--primary);
+        }
+
+        .metric-label {
+            font-size: 0.75rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            margin-top: 0.25rem;
+        }
+
+        pre {
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🧠 MentalOS Cognitive Engine</h1>
+            <p class="subtitle">Deterministic FCIS (Functional Cognitive Inference System) for Physics/Spatial Intelligence</p>
+            <div style="margin-top: 1rem;">
+                <span id="statusBadge" class="status-badge status-unhealthy">Checking...</span>
+            </div>
+        </header>
+
+        <div class="grid">
+            <!-- Left Panel: Input -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">⚡</div>
+                    <h2 class="card-title">Cognitive Request</h2>
+                </div>
+
+                <div class="tabs">
+                    <button class="tab active" data-tab="spatial">Spatial</button>
+                    <button class="tab" data-tab="probabilistic">Probabilistic</button>
+                    <button class="tab" data-tab="logical">Logical</button>
+                    <button class="tab" data-tab="custom">Custom</button>
+                </div>
+
+                <form id="requestForm">
+                    <div class="form-group">
+                        <label for="question">Question</label>
+                        <textarea id="question" placeholder="Describe your cognitive task..." required></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="bucket">Context Bucket</label>
+                        <select id="bucket" required>
+                            <option value="SPATIAL">SPATIAL</option>
+                            <option value="TEMPORAL">TEMPORAL</option>
+                            <option value="LOGICAL">LOGICAL</option>
+                            <option value="CAUSAL">CAUSAL</option>
+                            <option value="PROBABILISTIC">PROBABILISTIC</option>
+                            <option value="OPTIMIZATION">OPTIMIZATION</option>
+                            <option value="SIMULATION">SIMULATION</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="operation">Requested Operation</label>
+                        <select id="operation" required>
+                            <option value="IDENTIFY">IDENTIFY</option>
+                            <option value="TRANSFORM">TRANSFORM</option>
+                            <option value="PROJECT">PROJECT</option>
+                            <option value="MEASURE">MEASURE</option>
+                            <option value="COMPARE">COMPARE</option>
+                            <option value="AGGREGATE">AGGREGATE</option>
+                            <option value="FILTER">FILTER</option>
+                            <option value="MAP">MAP</option>
+                            <option value="REDUCE">REDUCE</option>
+                        </select>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="inputData">Input Data (JSON)</label>
+                        <textarea id="inputData" placeholder='{"objects": [], "rays": []}' style="min-height: 150px;"></textarea>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="parameters">Parameters (JSON, optional)</label>
+                        <textarea id="parameters" placeholder='{"n_samples": 10000}' style="min-height: 80px;"></textarea>
+                    </div>
+
+                    <button type="submit" class="btn" id="submitBtn">
+                        <span>🚀 Execute Pipeline</span>
+                    </button>
+
+                    <div class="quick-actions" id="quickActions">
+                        <button type="button" class="action-btn" data-example="raytrace">Ray-Sphere Intersection</button>
+                        <button type="button" class="action-btn" data-example="distance">Distance Measure</button>
+                        <button type="button" class="action-btn" data-example="montecarlo">Monte Carlo Simulation</button>
+                        <button type="button" class="action-btn" data-example="graph">Graph Analysis</button>
+                    </div>
+                </form>
+            </div>
+
+            <!-- Right Panel: Results -->
+            <div class="card">
+                <div class="card-header">
+                    <div class="card-icon">📊</div>
+                    <h2 class="card-title">Pipeline Results</h2>
+                </div>
+
+                <div id="resultsContainer">
+                    <div class="result-box" style="text-align: center; color: var(--text-muted); padding: 3rem;">
+                        <p>No results yet. Submit a cognitive request to see the output.</p>
+                    </div>
+                </div>
+
+                <div id="metricsContainer" style="display: none;">
+                    <h3 style="margin: 1.5rem 0 1rem; font-size: 1rem;">Execution Metrics</h3>
+                    <div class="metrics-grid">
+                        <div class="metric-card">
+                            <div class="metric-value" id="metricOperation">-</div>
+                            <div class="metric-label">Identified Operation</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="metricModel">-</div>
+                            <div class="metric-label">Selected Model</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="metricTool">-</div>
+                            <div class="metric-label">Selected Tool</div>
+                        </div>
+                        <div class="metric-card">
+                            <div class="metric-value" id="metricSteps">-</div>
+                            <div class="metric-label">Pipeline Steps</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Full-width Execution Log -->
+        <div class="card" style="margin-top: 2rem;">
+            <div class="card-header">
+                <div class="card-icon">📜</div>
+                <h2 class="card-title">Execution Log</h2>
+            </div>
+            <div id="logContainer" class="result-box">
+                <p style="color: var(--text-muted);">Execution log will appear here after running a pipeline.</p>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const API_BASE = '';
+        
+        // Example presets
+        const examples = {
+            raytrace: {
+                question: "Find where a ray from origin hits a sphere at z=5",
+                bucket: "SPATIAL",
+                operation: "TRANSFORM",
+                inputData: {
+                    objects: [
+                        {
+                            type: "SPHERE",
+                            translation: [0, 0, 5],
+                            radius: 1.0
+                        }
+                    ],
+                    rays: [
+                        {
+                            origin: [0, 0, 0],
+                            direction: [0, 0, 1]
+                        }
+                    ]
+                },
+                parameters: {}
+            },
+            distance: {
+                question: "Measure distance between two points",
+                bucket: "SPATIAL",
+                operation: "MEASURE",
+                inputData: {
+                    points: [[0, 0, 0], [3, 4, 0]]
+                },
+                parameters: {}
+            },
+            montecarlo: {
+                question: "Run Monte Carlo simulation to analyze normal distribution",
+                bucket: "PROBABILISTIC",
+                operation: "REDUCE",
+                inputData: {
+                    distribution: "normal",
+                    mean: [0.0],
+                    std: [1.0]
+                },
+                parameters: { n_samples: 10000 }
+            },
+            graph: {
+                question: "Analyze connected components in graph",
+                bucket: "LOGICAL",
+                operation: "COMPARE",
+                inputData: {
+                    nodes: 6,
+                    edges: [[0, 1], [1, 2], [3, 4]]
+                },
+                parameters: {}
+            }
+        };
+
+        // Tab switching
+        document.querySelectorAll('.tab').forEach(tab => {
+            tab.addEventListener('click', () => {
+                document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+                tab.classList.add('active');
+                
+                const exampleKey = tab.dataset.tab;
+                if (examples[exampleKey]) {
+                    loadExample(exampleKey);
+                }
+            });
+        });
+
+        // Quick actions
+        document.querySelectorAll('.action-btn').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const exampleKey = btn.dataset.example;
+                if (examples[exampleKey]) {
+                    loadExample(exampleKey);
+                }
+            });
+        });
+
+        function loadExample(key) {
+            const example = examples[key];
+            document.getElementById('question').value = example.question;
+            document.getElementById('bucket').value = example.bucket;
+            document.getElementById('operation').value = example.operation;
+            document.getElementById('inputData').value = JSON.stringify(example.inputData, null, 2);
+            document.getElementById('parameters').value = JSON.stringify(example.parameters, null, 2);
+        }
+
+        // Form submission
+        document.getElementById('requestForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            
+            const submitBtn = document.getElementById('submitBtn');
+            const originalText = submitBtn.innerHTML;
+            submitBtn.disabled = true;
+            submitBtn.innerHTML = '<span class="loading"></span> Processing...';
+
+            try {
+                const question = document.getElementById('question').value;
+                const bucket = document.getElementById('bucket').value;
+                const operation = document.getElementById('operation').value;
+                const inputData = JSON.parse(document.getElementById('inputData').value || '{}');
+                const parameters = JSON.parse(document.getElementById('parameters').value || 'null') || {};
+
+                const response = await fetch(`${API_BASE}/cognitive/process`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        question,
+                        context_bucket: bucket,
+                        requested_operation: operation,
+                        input_data: inputData,
+                        parameters
+                    })
+                });
+
+                const data = await response.json();
+
+                if (response.ok) {
+                    displayResults(data);
+                    displayLog(data.execution_log);
+                    displayMetrics(data);
+                } else {
+                    displayError(data.detail || 'Unknown error');
+                }
+            } catch (error) {
+                displayError(error.message);
+            } finally {
+                submitBtn.disabled = false;
+                submitBtn.innerHTML = originalText;
+            }
+        });
+
+        function displayResults(data) {
+            const container = document.getElementById('resultsContainer');
+            container.innerHTML = `
+                <div class="result-box result-success">
+                    <h3 style="color: var(--success); margin-bottom: 1rem;">✅ Success</h3>
+                    <p><strong>Final Answer:</strong></p>
+                    <pre>${escapeHtml(data.final_answer)}</pre>
+                    
+                    <div style="margin-top: 1.5rem;">
+                        <p><strong>Intermediate Results:</strong></p>
+                        <pre>${escapeHtml(JSON.stringify(data.intermediate_results, null, 2))}</pre>
+                    </div>
+                </div>
+            `;
+            document.getElementById('metricsContainer').style.display = 'block';
+        }
+
+        function displayError(message) {
+            const container = document.getElementById('resultsContainer');
+            container.innerHTML = `
+                <div class="result-box result-error">
+                    <h3 style="color: var(--error); margin-bottom: 1rem;">❌ Error</h3>
+                    <pre>${escapeHtml(message)}</pre>
+                </div>
+            `;
+            document.getElementById('metricsContainer').style.display = 'none';
+        }
+
+        function displayLog(log) {
+            const container = document.getElementById('logContainer');
+            container.innerHTML = log.map((entry, idx) => `
+                <div class="log-entry">
+                    <span class="log-step">Step ${idx + 1}:</span> ${escapeHtml(entry)}
+                </div>
+            `).join('');
+        }
+
+        function displayMetrics(data) {
+            document.getElementById('metricOperation').textContent = data.identified_operation;
+            document.getElementById('metricModel').textContent = data.selected_model;
+            document.getElementById('metricTool').textContent = data.selected_tool;
+            document.getElementById('metricSteps').textContent = data.execution_log.length;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        // Health check on load
+        async function checkHealth() {
+            try {
+                const response = await fetch(`${API_BASE}/health`);
+                const data = await response.json();
+                
+                const badge = document.getElementById('statusBadge');
+                if (data.status === 'healthy') {
+                    badge.className = 'status-badge status-healthy';
+                    badge.textContent = '● System Online';
+                } else {
+                    badge.className = 'status-badge status-unhealthy';
+                    badge.textContent = '● System Offline';
+                }
+            } catch (error) {
+                const badge = document.getElementById('statusBadge');
+                badge.className = 'status-badge status-unhealthy';
+                badge.textContent = '● Connection Failed';
+            }
+        }
+
+        // Initialize
+        checkHealth();
+        loadExample('raytrace');
+    </script>
+</body>
+</html>
