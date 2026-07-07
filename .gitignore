@@ -1,30 +1,39 @@
 ```
 # Python
 __pycache__/
-*.pyc
-*.pyo
-*.pyd
+*.py[cod]
+*$py.class
+*.so
 .Python
-env/
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
 venv/
+env/
+ENV/
 .venv/
-.ENV
-.ENV.local
-.env
-.env.local
-.env.*
-.venv.bak
-pip-log.txt
-pip-delete-this-directory.txt
-.tox/
+.env/
+
+# Testing
 .coverage
-.coverage.*
-.cache
-nosetests.xml
-coverage.xml
-*.cover
-*.log
-.git/refs/replace/
+coverage/
+htmlcov/
+.nyc_output/
+.pytest_cache/
 .hypothesis/
 
 # IDE
@@ -34,18 +43,15 @@ coverage.xml
 *.swo
 *.tmp
 
-# Build and distribution artifacts
-dist/
-build/
-*.egg-info/
-.eggs/
-develop-eggs/
-.installed.cfg
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+*.env.*
 ```
