@@ -1,195 +1,363 @@
 """
-MentalOS Core Type Definitions
-Data-Oriented Design with strict typing using NewType and Annotated arrays.
-Zero OOP for business logic - only data containers.
-"""
+MentalOS Types - Core Type Definitions
 
-from typing import Annotated, Literal, Union, Optional
+Strict typing with NewType and Annotated arrays for physics/spatial inference.
+Data-Oriented Design: frozen dataclasses only, no OOP business logic.
+"""
+from __future__ import annotations
+from typing import Optional, List, Dict, Any, Literal, Union
 from dataclasses import dataclass, field
 import numpy as np
 from numpy.typing import NDArray
-
+from typing_extensions import Annotated
 
 # =============================================================================
-# PRIMITIVE TYPE ALIASES (NewType-style via type hints)
+# TYPE ALIASES - Strict NumPy Array Types
 # =============================================================================
 
-# Scalar types with semantic meaning
-QuestionStr = str
-AnswerStr = str
-OperationName = Literal[
-    "IDENTIFY", "TRANSFORM", "PROJECT", "MEASURE", 
-    "COMPARE", "AGGREGATE", "FILTER", "MAP", "REDUCE"
-]
-BucketName = Literal[
-    "SPATIAL", "TEMPORAL", "LOGICAL", "CAUSAL", 
-    "PROBABILISTIC", "OPTIMIZATION", "SIMULATION"
-]
-ModelName = Literal["FCIS", "RAYTRACE", "MONTECARLO", "GRAPH"]
-ToolName = Literal["NUMPY", "SCIPY", "SPATIAL_INDEX", "VECTOR_ENGINE"]
+Vector2D = Annotated[NDArray[np.float64], "Shape[2]"]
+Vector3D = Annotated[NDArray[np.float64], "Shape[3]"]
+Vector4D = Annotated[NDArray[np.float64], "Shape[4]"]
+Matrix2x2 = Annotated[NDArray[np.float64], "Shape[2,2]"]
+Matrix3x3 = Annotated[NDArray[np.float64], "Shape[3,3]"]
+Matrix4x4 = Annotated[NDArray[np.float64], "Shape[4,4]"]
+Quaternion = Annotated[NDArray[np.float64], "Shape[4]"]
+TransformMatrix = Annotated[NDArray[np.float64], "Shape[4,4]"]
 
-# Vector/Array types with dimension annotations
-Vector2D = Annotated[NDArray[np.float64], tuple[int, int]]  # (N, 2)
-Vector3D = Annotated[NDArray[np.float64], tuple[int, 3]]  # (N, 3)
-Vector4D = Annotated[NDArray[np.float64], tuple[int, 4]]  # (N, 4) homogeneous
-Matrix2D = Annotated[NDArray[np.float64], tuple[int, int]]  # (M, N)
-TransformMatrix = Annotated[NDArray[np.float64], tuple[4, 4]]  # 4x4 homogeneous transform
-Quaternion = Annotated[NDArray[np.float64], tuple[4]]  # (w, x, y, z)
-
-# Bounded scalar types
+Scalar = float
 AngleRad = Annotated[float, "radians"]
 AngleDeg = Annotated[float, "degrees"]
 Distance = Annotated[float, "meters"]
-TimeSec = Annotated[float, "seconds"]
-Probability = Annotated[float, "0.0 to 1.0"]
-
-
-# =============================================================================
-# SPATIAL DATA STRUCTURES
-# =============================================================================
-
-@dataclass(frozen=True)
-class SpatialPoint:
-    """Immutable 3D point with optional normal and UV coordinates."""
-    position: Vector3D
-    normal: Optional[Vector3D] = None
-    uv: Optional[Vector2D] = None
-    material_id: int = 0
-
-
-@dataclass(frozen=True)
-class SpatialRay:
-    """Ray definition for raytracing operations."""
-    origin: Vector3D
-    direction: Vector3D  # Must be normalized
-    t_min: float = 0.0
-    t_max: float = np.inf
-
-
-@dataclass(frozen=True)
-class RayHit:
-    """Result of a ray-scene intersection test."""
-    hit: bool
-    t: float = np.inf
-    point: Optional[Vector3D] = None
-    normal: Optional[Vector3D] = None
-    object_id: int = -1
-    material_id: int = 0
-
-
-@dataclass(frozen=True)
-class Transform:
-    """4x4 homogeneous transformation matrix wrapper."""
-    matrix: TransformMatrix
-    
-    def __post_init__(self):
-        if self.matrix.shape != (4, 4):
-            raise ValueError("Transform matrix must be 4x4")
-
-
-@dataclass(frozen=True)
-class BoundingBox:
-    """Axis-aligned bounding box in 3D space."""
-    min_point: Vector3D
-    max_point: Vector3D
-    
-    def __post_init__(self):
-        if not (self.min_point.shape == (3,) and self.max_point.shape == (3,)):
-            raise ValueError("BoundingBox requires 3D points")
-        if np.any(self.max_point < self.min_point):
-            raise ValueError("max_point must be >= min_point component-wise")
-
-
-@dataclass(frozen=True)
-class SceneObject:
-    """Generic scene object with geometry and transform."""
-    object_id: int
-    object_type: Literal["SPHERE", "BOX", "MESH", "PLANE", "CYLINDER"]
-    transform: Transform
-    material_id: int
-    bounds: BoundingBox
-    # Geometry data stored as flat arrays for cache efficiency
-    vertices: Optional[Vector3D] = None  # For mesh types
-    indices: Optional[NDArray[np.int32]] = None  # Triangle indices
-    radius: Optional[float] = None  # For spheres/cylinders
-    half_extents: Optional[Vector3D] = None  # For boxes
-
-
-@dataclass(frozen=True)
-class Scene:
-    """Collection of scene objects with spatial acceleration structure info."""
-    objects: tuple[SceneObject, ...]
-    global_bounds: BoundingBox
-    acceleration_type: Literal["BVH", "OCTREE", "GRID", "NONE"] = "BVH"
-    # Precomputed acceleration data (opaque to core logic)
-    acceleration_data: Optional[dict] = None
-
+Time = Annotated[float, "seconds"]
+Velocity = Annotated[float, "m/s"]
+Acceleration = Annotated[float, "m/s^2"]
+Force = Annotated[float, "newtons"]
+Mass = Annotated[float, "kg"]
+Work = Annotated[float, "joules"]
+Energy = Annotated[float, "joules"]
+Power = Annotated[float, "watts"]
+Momentum = Annotated[float, "kg*m/s"]
 
 # =============================================================================
-# FCIS (Functional Cognitive Inference System) TYPES
+# PRIMARY OPERATIONS (The 5 Verbs)
+# =============================================================================
+
+PrimaryOperation = Literal[
+    "accumulate",      # Integration, summation, work, energy accumulation
+    "transform",       # Coordinate transforms, vector resolution, rotations
+    "scale",           # Ratios, proportions, scaling factors
+    "estimate",        # Averages, approximations, statistical estimates
+    "differentiate"    # Rates of change, derivatives, slopes
+]
+
+# =============================================================================
+# BUCKETS (6 Cognitive Buckets)
+# =============================================================================
+
+Bucket = Literal[
+    "accumulation",    # Work, energy, impulse, charge accumulation
+    "transformation",  # Vector resolution, coordinate systems, rotations
+    "geometry",        # Distances, angles, shapes, spatial relationships
+    "kinematics",      # Motion without forces, velocity, acceleration
+    "dynamics",        # Forces, Newton's laws, momentum
+    "conservation"     # Conservation laws, energy, momentum, charge
+]
+
+# =============================================================================
+# MODELS (Physics Frameworks)
+# =============================================================================
+
+Model = Literal[
+    "newtonian_mechanics",
+    "work_energy_theorem",
+    "conservation_of_energy",
+    "conservation_of_momentum",
+    "kinematics_constant_acceleration",
+    "kinematics_projectile_motion",
+    "circular_motion",
+    "rotational_dynamics",
+    "simple_harmonic_motion",
+    "gravitation",
+    "fluid_mechanics",
+    "thermodynamics",
+    "electrostatics",
+    "electric_circuits",
+    "magnetism",
+    "electromagnetic_induction",
+    "waves_optics",
+    "special_relativity",
+    "quantum_mechanics",
+    "statistical_mechanics",
+    "equilibrium_statics"
+]
+
+# =============================================================================
+# TOOLS (Mathematical Tools)
+# =============================================================================
+
+Tool = Literal[
+    "trigonometry",
+    "vector_algebra",
+    "calculus_derivative",
+    "calculus_integral",
+    "linear_algebra",
+    "differential_equations",
+    "statistics",
+    "complex_numbers",
+    "matrix_operations",
+    "coordinate_geometry",
+    "unit_conversion",
+    "algebraic_manipulation"
+]
+
+# =============================================================================
+# DATA EXTRACTION TYPES
 # =============================================================================
 
 @dataclass(frozen=True)
-class CognitiveRequest:
-    """Input request to the cognitive pipeline."""
-    question: QuestionStr
-    context_bucket: BucketName
-    requested_operation: OperationName
-    input_data: dict
-    parameters: Optional[dict] = None
+class ExtractedValue:
+    """A single extracted value from problem text."""
+    symbol: str
+    value: float
+    unit: str
+    description: str
+    uncertainty: Optional[float] = None
 
+
+@dataclass(frozen=True)
+class ExtractedVector:
+    """A vector value with magnitude and direction."""
+    symbol: str
+    magnitude: float
+    direction_angle: AngleDeg
+    direction_reference: str  # e.g., "horizontal", "positive_x_axis"
+    unit: str
+    components: Optional[Dict[str, float]] = None
+
+
+@dataclass(frozen=True)
+class ProblemContext:
+    """Background context extracted from problem statement."""
+    objects: List[str]
+    conditions: List[str]
+    constraints: List[str]
+    assumptions: List[str]
+    known_values: List[Union[ExtractedValue, ExtractedVector]]
+
+
+# =============================================================================
+# COGNITIVE PIPELINE STATE
+# =============================================================================
+
+@dataclass(frozen=True)
+class QuestionAnalysis:
+    """Stage 1: Question parsing and intent recognition."""
+    raw_text: str
+    parts: Dict[str, str]  # a, b, c, d -> question text
+    current_part: Optional[str]  # Which part we're solving
+    context: ProblemContext
+    keywords: List[str]
+    tokens: List[str]
+
+
+@dataclass(frozen=True)
+class RequestedOutput:
+    """Stage 2: What the question wants."""
+    target_quantity: str  # e.g., "work", "velocity", "acceleration"
+    output_type: Literal["instantaneous", "average", "maximum", "minimum", "total", "net"]
+    symbol: str
+    unit: str
+    description: str
+
+
+@dataclass(frozen=True)
+class ConstraintLock:
+    """Stage 3: Isolate variables and constraints."""
+    relevant_variables: List[str]
+    ignored_variables: List[str]
+    fixed_parameters: Dict[str, ExtractedValue]
+    variable_parameters: Dict[str, ExtractedValue]
+    boundary_conditions: List[str]
+    scope_keywords: List[str]
+
+
+@dataclass(frozen=True)
+class OperationLock:
+    """Stage 4: Primary operation determination (Winner Takes All)."""
+    primary_operation: PrimaryOperation
+    confidence: float
+    reasoning: str
+    secondary_operations: List[PrimaryOperation] = field(default_factory=list)
+    operation_order: List[PrimaryOperation] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class BucketAssignment:
+    """Stage 5: Bucket determination."""
+    primary_bucket: Bucket
+    confidence: float
+    reasoning: str
+    alternative_buckets: List[Bucket] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ModelSelection:
+    """Stage 6: Physics model selection."""
+    primary_model: Model
+    confidence: float
+    reasoning: str
+    supporting_principles: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class ToolSelection:
+    """Stage 7: Mathematical tool selection."""
+    primary_tool: Tool
+    confidence: float
+    reasoning: str
+    required_formulas: List[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class NestedOperation:
+    """Represents a nested/sub-operation in the dependency chain."""
+    order: int  # 1st, 2nd, 3rd, etc.
+    operation: PrimaryOperation
+    bucket: Bucket
+    model: Model
+    tool: Tool
+    target_variable: str
+    dependencies: List[str] = field(default_factory=list)
+    result: Optional[float] = None
+    result_unit: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class ExecutionPlan:
+    """Stage 8: Complete execution plan with nested operations."""
+    primary_operation: OperationLock
+    nested_operations: List[NestedOperation]
+    execution_order: List[int]
+    final_formula: str
+    intermediate_results: Dict[str, float] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class EquationMatch:
+    """Matched equation from database."""
+    equation_id: str
+    formula: str
+    variables: List[str]
+    description: str
+    applicable_models: List[Model]
+    applicable_tools: List[Tool]
+
+
+@dataclass(frozen=True)
+class SpatialVisualization:
+    """Spatial representation for vector resolution, etc."""
+    visualization_type: Literal["vector_triangle", "free_body_diagram", "coordinate_system", "motion_diagram"]
+    elements: Dict[str, Any]
+    annotations: List[str]
+    svg_representation: Optional[str] = None
+
+
+# =============================================================================
+# RESULTS AND AUDIT
+# =============================================================================
+
+@dataclass(frozen=True)
+class StepResult:
+    """Result of a single computation step."""
+    step_number: int
+    operation: PrimaryOperation
+    variable_name: str
+    value: float
+    unit: str
+    formula_used: str
+    inputs: Dict[str, float]
+    success: bool
+    error_message: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class CognitiveResult:
+    """Final result of cognitive pipeline."""
+    question_part: str
+    requested_output: RequestedOutput
+    final_value: float
+    unit: str
+    significant_figures: int
+    step_results: List[StepResult]
+    audit_feedback: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class AuditFeedback:
+    """LLM audit feedback on solution approach."""
+    approach_correct: bool
+    succinct_feedback: str  # 250-300 words max
+    thought_provoking_questions: List[str]
+    identified_issues: List[str] = field(default_factory=list)
+    suggestions: List[str] = field(default_factory=list)
+
+
+# =============================================================================
+# USER INTERACTION TYPES
+# =============================================================================
+
+@dataclass(frozen=True)
+class UserPrompt:
+    """Prompt for user interaction."""
+    prompt_type: Literal[
+        "select_question_part",
+        "confirm_primary_operation",
+        "identify_secondary_operations",
+        "select_equation",
+        "input_values",
+        "confirm_units",
+        "continue_next_part",
+        "provide_spatial_input"
+    ]
+    message: str
+    options: Optional[List[str]] = None
+    required_input_type: Optional[str] = None
+
+
+@dataclass(frozen=True)
+class UserResponse:
+    """User response to prompts."""
+    prompt_type: str
+    response: Any
+    confirmed: bool
+    additional_notes: Optional[str] = None
+
+
+# =============================================================================
+# COMPLETE COGNITIVE STATE
+# =============================================================================
 
 @dataclass(frozen=True)
 class CognitiveState:
-    """Immutable state passed through the pipeline stages."""
-    request: CognitiveRequest
-    identified_operation: OperationName
-    selected_model: ModelName
-    selected_tool: ToolName
-    intermediate_results: dict
-    final_answer: Optional[AnswerStr] = None
-    execution_log: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class PipelineStage:
-    """Definition of a pipeline stage with pure function signature."""
-    name: str
-    input_types: tuple[type, ...]
-    output_types: tuple[type, ...]
-    is_deterministic: bool
-
-
-# =============================================================================
-# COMPUTATIONAL RESULT TYPES
-# =============================================================================
-
-@dataclass(frozen=True)
-class SimulationResult:
-    """Result from a physics/spatial simulation."""
-    success: bool
-    iterations: int
-    final_state: dict
-    convergence_metric: float
-    warnings: tuple[str, ...] = ()
-
-
-@dataclass(frozen=True)
-class SpatialQueryResult:
-    """Result from spatial queries (intersection, distance, etc.)."""
-    query_type: str
-    results: NDArray[np.float64]
-    metadata: Optional[dict] = None
-
-
-@dataclass(frozen=True)
-class StatisticalResult:
-    """Result from probabilistic/statistical computation."""
-    mean: NDArray[np.float64]
-    variance: NDArray[np.float64]
-    samples: int
-    confidence_interval: tuple[float, float]
-    distribution_type: str
+    """Complete state of the cognitive pipeline."""
+    session_id: str
+    question_analysis: QuestionAnalysis
+    requested_output: Optional[RequestedOutput] = None
+    constraint_lock: Optional[ConstraintLock] = None
+    operation_lock: Optional[OperationLock] = None
+    bucket_assignment: Optional[BucketAssignment] = None
+    model_selection: Optional[ModelSelection] = None
+    tool_selection: Optional[ToolSelection] = None
+    execution_plan: Optional[ExecutionPlan] = None
+    step_results: List[StepResult] = field(default_factory=list)
+    final_result: Optional[CognitiveResult] = None
+    audit_feedback: Optional[AuditFeedback] = None
+    user_prompts: List[UserPrompt] = field(default_factory=list)
+    user_responses: List[UserResponse] = field(default_factory=list)
+    current_stage: str = "question_analysis"
+    is_complete: bool = False
+    has_errors: bool = False
+    error_messages: List[str] = field(default_factory=list)
 
 
 # =============================================================================
@@ -197,19 +365,22 @@ class StatisticalResult:
 # =============================================================================
 
 @dataclass(frozen=True)
-class APIRequest:
-    """Standardized API request format."""
-    endpoint: str
-    method: Literal["GET", "POST", "PUT", "DELETE"]
-    payload: dict
-    headers: Optional[dict] = None
-    query_params: Optional[dict] = None
+class CognitiveRequest:
+    """Request to process a physics/math problem."""
+    question_text: str
+    question_parts: Optional[Dict[str, str]] = None
+    selected_part: Optional[str] = None
+    user_context: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
-class APIResponse:
-    """Standardized API response format."""
-    status_code: int
-    body: dict
-    headers: Optional[dict] = None
-    error_message: Optional[str] = None
+class CognitiveResponse:
+    """Response from cognitive pipeline."""
+    session_id: str
+    stage: str
+    state: CognitiveState
+    requires_user_input: bool
+    user_prompt: Optional[UserPrompt] = None
+    partial_result: Optional[StepResult] = None
+    final_result: Optional[CognitiveResult] = None
+    audit_feedback: Optional[AuditFeedback] = None

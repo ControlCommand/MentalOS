@@ -1,771 +1,916 @@
 """
-MentalOS Core Pipeline Engine
-Deterministic FCIS (Functional Cognitive Inference System) implementation.
-Zero OOP for business logic - pure functions only.
-Single Primary Operation Lock enforced.
-"""
+MentalOS Cognitive Pipeline Engine
 
-from typing import Callable, Any, Optional
-import numpy as np
-from numpy.typing import NDArray
+Implements the deterministic FCIS pipeline with DAG-based nested operation resolution.
+Question → Requested Output → Constraint Lock → Operation Lock → Bucket → Model → Tool → Execution
+"""
+from __future__ import annotations
+import re
+import uuid
+from typing import List, Dict, Optional, Any, Tuple, Set
+from dataclasses import dataclass, field
 
 from mentalos.types import (
-    CognitiveRequest, CognitiveState, PipelineStage,
-    OperationName, BucketName, ModelName, ToolName,
-    Scene, SceneObject, BoundingBox, Transform,
-    SpatialRay, RayHit, Vector3D, TransformMatrix,
-    SimulationResult, SpatialQueryResult, StatisticalResult,
-    create_transform_matrix, normalize_vector
+    PrimaryOperation, Bucket, Model, Tool,
+    QuestionAnalysis, RequestedOutput, ConstraintLock, OperationLock,
+    BucketAssignment, ModelSelection, ToolSelection, NestedOperation,
+    ExecutionPlan, StepResult, CognitiveResult, UserPrompt, UserResponse,
+    CognitiveState, CognitiveRequest, CognitiveResponse,
+    ExtractedValue, ExtractedVector, ProblemContext, EquationMatch,
+    SpatialVisualization
 )
-
-# =============================================================================
-# STAGE 1: QUESTION → REQUESTED OUTPUT (Task Identification)
-# =============================================================================
-
-def identify_task_from_question(question: str, bucket: BucketName) -> OperationName:
-    """
-    Pure function: Analyze question to determine the primary operation.
-    Task identification BEFORE method selection (FCIS principle).
-    
-    This is a deterministic rule-based classifier.
-    """
-    q_lower = question.lower()
-    
-    # Spatial bucket operations
-    if bucket == "SPATIAL":
-        if any(word in q_lower for word in ["intersect", "collision", "hit", "ray"]):
-            return "TRANSFORM"  # Ray transformation and intersection
-        elif any(word in q_lower for word in ["distance", "closest", "nearest"]):
-            return "MEASURE"
-        elif any(word in q_lower for word in ["transform", "rotate", "translate", "scale"]):
-            return "TRANSFORM"
-        elif any(word in q_lower for word in ["project", "shadow", "projection"]):
-            return "PROJECT"
-        elif any(word in q_lower for word in ["compare", "similar", "difference"]):
-            return "COMPARE"
-        else:
-            return "IDENTIFY"
-    
-    # Temporal bucket operations
-    elif bucket == "TEMPORAL":
-        if any(word in q_lower for word in ["simulate", "evolve", "step"]):
-            return "TRANSFORM"
-        elif any(word in q_lower for word in ["integrate", "accumulate"]):
-            return "AGGREGATE"
-        else:
-            return "IDENTIFY"
-    
-    # Probabilistic bucket operations
-    elif bucket == "PROBABILISTIC":
-        if any(word in q_lower for word in ["sample", "monte carlo", "random"]):
-            return "MAP"  # Map over samples
-        elif any(word in q_lower for word in ["statistics", "mean", "variance", "distribution", "analyze"]):
-            return "REDUCE"  # Statistical reduction
-        else:
-            return "IDENTIFY"
-    
-    # Optimization bucket operations
-    elif bucket == "OPTIMIZATION":
-        if any(word in q_lower for word in ["minimize", "maximize", "optimize"]):
-            return "TRANSFORM"
-        elif any(word in q_lower for word in ["constraint", "feasible"]):
-            return "FILTER"
-        else:
-            return "IDENTIFY"
-    
-    # Logical bucket operations
-    elif bucket == "LOGICAL":
-        if any(word in q_lower for word in ["graph", "node", "edge", "connect"]):
-            return "COMPARE"
-        elif any(word in q_lower for word in ["path", "shortest", "route"]):
-            return "TRANSFORM"
-        else:
-            return "IDENTIFY"
-    
-    # Default fallback
-    return "IDENTIFY"
-
-
-def validate_single_operation_lock(requested: OperationName, identified: OperationName) -> bool:
-    """
-    Enforce Single Primary Operation Lock.
-    The identified operation must match or be a valid refinement of requested.
-    """
-    # For now, we allow the pipeline to proceed if identification refines the request
-    # In strict mode, these should match exactly
-    valid_transitions = {
-        "IDENTIFY": {"IDENTIFY", "TRANSFORM", "MEASURE", "PROJECT", "COMPARE"},
-        "TRANSFORM": {"TRANSFORM"},
-        "MEASURE": {"MEASURE"},
-        "PROJECT": {"PROJECT"},
-        "COMPARE": {"COMPARE"},
-        "AGGREGATE": {"AGGREGATE", "REDUCE"},
-        "FILTER": {"FILTER"},
-        "MAP": {"MAP", "REDUCE"},  # MAP can be refined to REDUCE for statistics
-        "REDUCE": {"REDUCE", "MAP"},  # REDUCE can accept MAP for sampling workflows
-    }
-    return identified in valid_transitions.get(requested, {requested})
+from mentalos.equations.database import get_equation_database, Equation
 
 
 # =============================================================================
-# STAGE 2: PRIMARY OPERATION → BUCKET → MODEL SELECTION
+# KEYWORD MAPS FOR INFERENCE
 # =============================================================================
 
-def select_model_for_operation(
-    operation: OperationName, 
-    bucket: BucketName,
-    input_data: dict
-) -> ModelName:
-    """
-    Pure function: Select computational model based on operation and data characteristics.
-    Deterministic selection rules.
-    """
-    # Spatial bucket model selection
-    if bucket == "SPATIAL":
-        if operation in ("TRANSFORM", "PROJECT"):
-            # Check if raytracing is needed
-            if "rays" in input_data or "ray" in input_data:
-                return "RAYTRACE"
-            return "FCIS"
-        elif operation == "MEASURE":
-            return "FCIS"
-        elif operation == "COMPARE":
-            return "GRAPH"
-    
-    # Probabilistic bucket
-    elif bucket == "PROBABILISTIC":
-        if operation in ("MAP", "REDUCE"):
-            return "MONTECARLO"
-        return "FCIS"
-    
-    # Temporal bucket
-    elif bucket == "TEMPORAL":
-        if operation == "TRANSFORM":
-            return "FCIS"
-        return "GRAPH"
-    
-    # Optimization bucket
-    elif bucket == "OPTIMIZATION":
-        return "FCIS"
-    
-    # Default
-    return "FCIS"
+OPERATION_KEYWORDS: Dict[PrimaryOperation, List[str]] = {
+    "accumulate": [
+        "work", "energy", "total", "sum", "accumulated", "integral",
+        "over a distance", "throughout", "combined", "net"
+    ],
+    "transform": [
+        "resolve", "components", "break down", "decompose", "project",
+        "x-component", "y-component", "horizontal", "vertical",
+        "angle", "direction", "rotate", "convert"
+    ],
+    "scale": [
+        "ratio", "proportion", "factor", "times", "multiplied",
+        "divided", "per", "coefficient", "fraction", "percentage"
+    ],
+    "estimate": [
+        "average", "mean", "approximate", "estimated", "typical",
+        "roughly", "about", "around"
+    ],
+    "differentiate": [
+        "rate", "change", "derivative", "slope", "instantaneous",
+        "how fast", "velocity", "acceleration", "gradient"
+    ]
+}
 
+BUCKET_KEYWORDS: Dict[Bucket, List[str]] = {
+    "accumulation": ["work", "energy", "power", "impulse", "charge"],
+    "transformation": ["vector", "components", "resolution", "coordinate", "rotation"],
+    "geometry": ["distance", "angle", "triangle", "shape", "spatial"],
+    "kinematics": ["velocity", "acceleration", "displacement", "motion", "speed"],
+    "dynamics": ["force", "newton", "mass", "friction", "tension"],
+    "conservation": ["conservation", "constant", "unchanged", "preserved"]
+}
 
-def select_tool_for_model(model: ModelName, operation: OperationName) -> ToolName:
-    """
-    Pure function: Select computational tool based on model requirements.
-    """
-    if model == "RAYTRACE":
-        return "VECTOR_ENGINE"
-    elif model == "MONTECARLO":
-        return "NUMPY"  # Vectorized random sampling
-    elif model == "GRAPH":
-        return "SCIPY"  # Sparse matrix operations
-    else:
-        return "NUMPY"  # Default to numpy for FCIS
+MODEL_KEYWORDS: Dict[Model, List[str]] = {
+    "work_energy_theorem": ["work", "energy", "kinetic", "potential", "theorem"],
+    "newtonian_mechanics": ["force", "newton", "mass", "acceleration", "f=ma"],
+    "kinematics_constant_acceleration": ["constant acceleration", "uniform acceleration", "kinematics"],
+    "equilibrium_statics": ["equilibrium", "static", "balanced", "stationary"],
+    "conservation_of_energy": ["conservation energy", "mechanical energy", "total energy"],
+    "conservation_of_momentum": ["conservation momentum", "collision", "impulse"]
+}
+
+OUTPUT_TYPE_KEYWORDS: Dict[str, List[str]] = {
+    "instantaneous": ["instantaneous", "at this moment", "at t=", "when"],
+    "average": ["average", "mean", "over the interval"],
+    "total": ["total", "net", "overall", "combined"],
+    "maximum": ["maximum", "max", "highest", "greatest"],
+    "minimum": ["minimum", "min", "lowest", "least"]
+}
 
 
 # =============================================================================
-# STAGE 3: TOOL → EXECUTION (Pure Computational Functions)
+# TEXT ANALYSIS UTILITIES
 # =============================================================================
 
-def execute_spatial_transform(
-    scene: Scene,
-    operation: OperationName,
-    input_data: dict
-) -> SpatialQueryResult:
-    """
-    Execute spatial transformation operations using vectorized numpy.
-    Handles: transform, project, measure operations on spatial data.
-    """
+def extract_numbers_with_units(text: str) -> List[Dict[str, Any]]:
+    """Extract numerical values with units from text."""
+    pattern = r'(\d+(?:\.\d+)?)\s*(kg|m/s|N|J|m|s|deg|°|%|m/s²|W)?'
+    matches = re.findall(pattern, text, re.IGNORECASE)
+    
     results = []
+    for value, unit in matches:
+        # Clean up unit
+        unit = unit.strip() if unit else ""
+        unit = unit.replace("°", "deg")
+        
+        results.append({
+            "value": float(value),
+            "unit": unit
+        })
     
-    # Extract rays if present
-    rays = input_data.get("rays", [])
-    objects = scene.objects
+    return results
+
+
+def extract_keywords(text: str) -> List[str]:
+    """Extract meaningful keywords from problem text."""
+    # Remove common stop words and punctuation
+    stop_words = {
+        "a", "an", "the", "is", "are", "was", "were", "be", "been",
+        "by", "from", "to", "of", "in", "on", "at", "for", "with",
+        "this", "that", "these", "those", "it", "its", "and", "or",
+        "but", "if", "then", "else", "when", "where", "how", "what"
+    }
     
-    if operation == "TRANSFORM" and rays:
-        # Ray-scene intersection using vectorized operations
-        for ray_data in rays:
-            origin = np.array(ray_data["origin"], dtype=np.float64)
-            direction = normalize_vector(np.array(ray_data["direction"], dtype=np.float64))
-            ray = SpatialRay(origin=origin, direction=direction)
+    # Tokenize
+    tokens = re.findall(r'\b[a-zA-Z][a-zA-Z-]+\b', text.lower())
+    
+    # Filter stop words and short words
+    keywords = [t for t in tokens if t not in stop_words and len(t) > 2]
+    
+    return keywords
+
+
+def parse_question_parts(text: str) -> Dict[str, str]:
+    """Parse multi-part questions (a, b, c, d)."""
+    parts = {}
+    
+    # Pattern for part labels like "a)", "a.", "(a)", etc.
+    pattern = r'(?:^|\n)\s*([a-d])[\).\)]\s*(.*?)(?=\n\s*[a-d][\).\)]|\Z)'
+    
+    matches = re.findall(pattern, text, re.IGNORECASE | re.DOTALL)
+    
+    for label, content in matches:
+        parts[label.lower()] = content.strip()
+    
+    return parts
+
+
+def detect_primary_operation(keywords: List[str]) -> Tuple[PrimaryOperation, float, str]:
+    """Detect primary operation using keyword matching (Winner Takes All)."""
+    scores: Dict[PrimaryOperation, float] = {op: 0.0 for op in OPERATION_KEYWORDS.keys()}
+    
+    for keyword in keywords:
+        kw_lower = keyword.lower()
+        for operation, op_keywords in OPERATION_KEYWORDS.items():
+            for op_kw in op_keywords:
+                if op_kw in kw_lower or kw_lower in op_kw:
+                    scores[operation] += 1.0
+    
+    # Winner takes all
+    best_op = max(scores, key=scores.get)
+    best_score = scores[best_op]
+    
+    # Normalize score
+    confidence = min(best_score / max(len(keywords), 1), 1.0)
+    
+    reasoning = f"Detected '{best_op}' based on keywords: {[k for k in keywords if any(op_kw in k.lower() for op_kw in OPERATION_KEYWORDS[best_op])]}"
+    
+    return best_op, confidence, reasoning
+
+
+def detect_bucket(keywords: List[str], operation: PrimaryOperation) -> Tuple[Bucket, float, str]:
+    """Detect cognitive bucket based on keywords and operation."""
+    scores: Dict[Bucket, float] = {bucket: 0.0 for bucket in BUCKET_KEYWORDS.keys()}
+    
+    # Operation-to-bucket mapping hints
+    operation_bucket_hints = {
+        "accumulate": ["accumulation", "conservation"],
+        "transform": ["transformation", "geometry"],
+        "scale": ["geometry", "dynamics"],
+        "estimate": ["kinematics", "dynamics"],
+        "differentiate": ["kinematics", "dynamics"]
+    }
+    
+    for keyword in keywords:
+        kw_lower = keyword.lower()
+        for bucket, bucket_keywords in BUCKET_KEYWORDS.items():
+            for bk in bucket_keywords:
+                if bk in kw_lower or kw_lower in bk:
+                    scores[bucket] += 1.5  # Boost for direct matches
             
-            closest_hit: Optional[RayHit] = None
-            closest_t = np.inf
+            # Bonus for operation-hinted buckets
+            if bucket in operation_bucket_hints.get(operation, []):
+                scores[bucket] += 0.3
+    
+    best_bucket = max(scores, key=scores.get)
+    confidence = min(scores[best_bucket] / max(len(keywords), 1), 1.0)
+    
+    reasoning = f"Bucket '{best_bucket}' selected based on domain keywords and operation '{operation}'"
+    
+    return best_bucket, confidence, reasoning
+
+
+def detect_model(keywords: List[str], bucket: Bucket) -> Tuple[Model, float, str]:
+    """Detect physics model based on keywords and bucket."""
+    scores: Dict[Model, float] = {model: 0.0 for model in MODEL_KEYWORDS.keys()}
+    
+    # Bucket-to-model hints
+    bucket_model_hints = {
+        "accumulation": ["work_energy_theorem", "conservation_of_energy"],
+        "transformation": ["newtonian_mechanics", "equilibrium_statics"],
+        "geometry": ["equilibrium_statics"],
+        "kinematics": ["kinematics_constant_acceleration"],
+        "dynamics": ["newtonian_mechanics"],
+        "conservation": ["conservation_of_energy", "conservation_of_momentum"]
+    }
+    
+    for keyword in keywords:
+        kw_lower = keyword.lower()
+        for model, model_keywords in MODEL_KEYWORDS.items():
+            for mk in model_keywords:
+                if mk in kw_lower or kw_lower in mk:
+                    scores[model] += 1.5
             
-            for obj in objects:
-                hit = _ray_object_intersection(ray, obj)
-                if hit.hit and hit.t < closest_t:
-                    closest_t = hit.t
-                    closest_hit = hit
-            
-            if closest_hit is not None and closest_hit.point is not None:
-                results.append([
-                    closest_hit.t,
-                    closest_hit.point[0], closest_hit.point[1], closest_hit.point[2],
-                    closest_hit.object_id
-                ])
-            else:
-                results.append([np.inf, 0, 0, 0, -1])
+            # Bonus for bucket-hinted models
+            if model in bucket_model_hints.get(bucket, []):
+                scores[model] += 0.3
     
-    elif operation == "MEASURE":
-        # Distance measurements
-        points = input_data.get("points", [])
-        if len(points) >= 2:
-            p1 = np.array(points[0], dtype=np.float64)
-            p2 = np.array(points[1], dtype=np.float64)
-            distance = np.linalg.norm(p2 - p1)
-            results.append([distance])
+    best_model = max(scores, key=scores.get)
+    confidence = min(scores[best_model] / max(len(keywords), 1), 1.0)
     
-    elif operation == "PROJECT":
-        # Projection operations
-        points = input_data.get("points", [])
-        plane_normal = np.array(input_data.get("plane_normal", [0, 1, 0]), dtype=np.float64)
-        plane_point = np.array(input_data.get("plane_point", [0, 0, 0]), dtype=np.float64)
-        
-        for pt in points:
-            pt_arr = np.array(pt, dtype=np.float64)
-            # Project point onto plane
-            projected = _project_point_to_plane(pt_arr, plane_point, plane_normal)
-            results.append(projected.tolist())
+    reasoning = f"Model '{best_model}' identified from problem context and bucket '{bucket}'"
     
-    if not results:
-        results = [[0.0]]
-    
-    return SpatialQueryResult(
-        query_type=operation,
-        results=np.array(results, dtype=np.float64),
-        metadata={"objects_count": len(objects)}
-    )
+    return best_model, confidence, reasoning
 
 
-def _ray_object_intersection(ray: SpatialRay, obj: SceneObject) -> RayHit:
-    """
-    Pure function: Compute ray-object intersection.
-    Supports spheres, boxes, and planes.
-    """
-    # Transform ray to object space
-    inv_matrix = np.linalg.inv(obj.transform.matrix)
+def detect_tool(model: Model, operation: PrimaryOperation) -> Tuple[Tool, float, str]:
+    """Determine mathematical tool based on model and operation."""
+    # Heuristic mapping
+    tool_mapping: Dict[Tuple[Model, PrimaryOperation], Tool] = {
+        ("work_energy_theorem", "accumulate"): "algebraic_manipulation",
+        ("newtonian_mechanics", "transform"): "trigonometry",
+        ("newtonian_mechanics", "scale"): "algebraic_manipulation",
+        ("kinematics_constant_acceleration", "accumulate"): "algebraic_manipulation",
+        ("kinematics_constant_acceleration", "estimate"): "algebraic_manipulation",
+        ("equilibrium_statics", "transform"): "trigonometry",
+    }
     
-    # Transform ray origin and direction (handle homogeneous coordinates properly)
-    origin_homogeneous = np.array([ray.origin[0], ray.origin[1], ray.origin[2], 1.0])
-    dir_homogeneous = np.array([ray.direction[0], ray.direction[1], ray.direction[2], 0.0])
+    # Default tools by operation
+    operation_defaults = {
+        "accumulate": "algebraic_manipulation",
+        "transform": "trigonometry",
+        "scale": "algebraic_manipulation",
+        "estimate": "statistics",
+        "differentiate": "calculus_derivative"
+    }
     
-    origin_obj = (inv_matrix @ origin_homogeneous)[:3]
-    dir_obj = (inv_matrix @ dir_homogeneous)[:3]
-    dir_obj = normalize_vector(dir_obj)
-    
-    ray_obj = SpatialRay(origin=origin_obj, direction=dir_obj)
-    
-    if obj.object_type == "SPHERE" and obj.radius is not None:
-        return _ray_sphere_intersection(ray_obj, obj, np.zeros(3), obj.radius)
-    elif obj.object_type == "BOX" and obj.half_extents is not None:
-        return _ray_box_intersection(ray_obj, obj, np.zeros(3), obj.half_extents)
-    elif obj.object_type == "PLANE":
-        return _ray_plane_intersection(ray_obj, obj)
-    
-    return RayHit(hit=False)
-
-
-def _ray_sphere_intersection(
-    ray: SpatialRay, 
-    obj: SceneObject,
-    center: Vector3D, 
-    radius: float
-) -> RayHit:
-    """Ray-sphere intersection using quadratic formula."""
-    oc = ray.origin - center
-    a = np.dot(ray.direction, ray.direction)
-    b = 2.0 * np.dot(oc, ray.direction)
-    c = np.dot(oc, oc) - radius * radius
-    
-    discriminant = b * b - 4 * a * c
-    
-    if discriminant < 0:
-        return RayHit(hit=False)
-    
-    sqrt_d = np.sqrt(discriminant)
-    t1 = (-b - sqrt_d) / (2 * a)
-    t2 = (-b + sqrt_d) / (2 * a)
-    
-    t = None
-    if t1 > ray.t_min and t1 < ray.t_max:
-        t = t1
-    elif t2 > ray.t_min and t2 < ray.t_max:
-        t = t2
+    key = (model, operation)
+    if key in tool_mapping:
+        tool = tool_mapping[key]
+        confidence = 0.9
+        reasoning = f"Tool '{tool}' selected based on model '{model}' and operation '{operation}'"
     else:
-        return RayHit(hit=False)
+        tool = operation_defaults.get(operation, "algebraic_manipulation")
+        confidence = 0.6
+        reasoning = f"Default tool '{tool}' for operation '{operation}'"
     
-    hit_point = ray.origin + t * ray.direction
-    hit_normal = normalize_vector(hit_point - center)
+    return tool, confidence, reasoning
+
+
+def infer_requested_output(question_text: str, keywords: List[str]) -> RequestedOutput:
+    """Infer what the question is asking for."""
+    question_lower = question_text.lower()
     
-    # Transform back to world space
-    normal_world = (obj.transform.matrix[:3, :3].T @ hit_normal)
-    normal_world = normalize_vector(normal_world)
-    point_world = obj.transform.matrix @ np.array([*hit_point, 1.0])
-    point_world = point_world[:3]
+    # Target quantity detection
+    quantity_map = {
+        "work": (["work done", "work was done", "much work"], "W", "J"),
+        "velocity": (["velocity", "speed", "how fast"], "v", "m/s"),
+        "acceleration": (["acceleration", "accelerating"], "a", "m/s²"),
+        "force": (["force", "forces"], "F", "N"),
+        "displacement": (["displacement", "distance moved"], "Δx", "m"),
+        "time": (["time", "how long", "duration"], "t", "s"),
+        "power": (["power", "power output"], "P", "W"),
+        "energy": (["energy", "kinetic energy", "potential energy"], "E", "J"),
+        "momentum": (["momentum"], "p", "kg·m/s"),
+        "height": (["height", "how high"], "h", "m")
+    }
     
-    return RayHit(
-        hit=True,
-        t=t,
-        point=point_world,
-        normal=normal_world,
-        object_id=obj.object_id,
-        material_id=obj.material_id
+    target_quantity = "unknown"
+    symbol = "?"
+    unit = "?"
+    
+    for quantity, (kw_list, sym, unt) in quantity_map.items():
+        for kw in kw_list:
+            if kw in question_lower:
+                target_quantity = quantity
+                symbol = sym
+                unit = unt
+                break
+        if target_quantity != "unknown":
+            break
+    
+    # Output type detection
+    output_type = "total"  # default
+    for out_type, type_keywords in OUTPUT_TYPE_KEYWORDS.items():
+        for tk in type_keywords:
+            if tk in question_lower:
+                output_type = out_type
+                break
+    
+    description = f"Calculate the {output_type} {target_quantity}"
+    
+    return RequestedOutput(
+        target_quantity=target_quantity,
+        output_type=output_type,  # type: ignore
+        symbol=symbol,
+        unit=unit,
+        description=description
     )
 
 
-def _ray_box_intersection(
-    ray: SpatialRay,
-    obj: SceneObject,
-    center: Vector3D,
-    half_extents: Vector3D
-) -> RayHit:
-    """Ray-AABB intersection using slab method."""
-    inv_dir = 1.0 / (ray.direction + 1e-10)  # Avoid division by zero
-    
-    t1 = (center[0] - half_extents[0] - ray.origin[0]) * inv_dir[0]
-    t2 = (center[0] + half_extents[0] - ray.origin[0]) * inv_dir[0]
-    t3 = (center[1] - half_extents[1] - ray.origin[1]) * inv_dir[1]
-    t4 = (center[1] + half_extents[1] - ray.origin[1]) * inv_dir[1]
-    t5 = (center[2] - half_extents[2] - ray.origin[2]) * inv_dir[2]
-    t6 = (center[2] + half_extents[2] - ray.origin[2]) * inv_dir[2]
-    
-    tmin = max(min(t1, t2), min(t3, t4), min(t5, t6))
-    tmax = min(max(t1, t2), max(t3, t4), max(t5, t6))
-    
-    if tmax < ray.t_min or tmin > ray.t_max or tmin > tmax:
-        return RayHit(hit=False)
-    
-    t = tmin if tmin > ray.t_min else tmax
-    
-    hit_point = ray.origin + t * ray.direction
-    
-    # Compute normal at hit point
-    local_hit = hit_point - center
-    normal = np.zeros(3)
-    epsilon = 1e-6
-    
-    if abs(local_hit[0] - half_extents[0]) < epsilon:
-        normal = np.array([1, 0, 0])
-    elif abs(local_hit[0] + half_extents[0]) < epsilon:
-        normal = np.array([-1, 0, 0])
-    elif abs(local_hit[1] - half_extents[1]) < epsilon:
-        normal = np.array([0, 1, 0])
-    elif abs(local_hit[1] + half_extents[1]) < epsilon:
-        normal = np.array([0, -1, 0])
-    elif abs(local_hit[2] - half_extents[2]) < epsilon:
-        normal = np.array([0, 0, 1])
-    elif abs(local_hit[2] + half_extents[2]) < epsilon:
-        normal = np.array([0, 0, -1])
-    
-    # Transform normal to world space
-    normal_world = (obj.transform.matrix[:3, :3].T @ normal)
-    normal_world = normalize_vector(normal_world)
-    
-    point_world = obj.transform.matrix @ np.array([*hit_point, 1.0])
-    point_world = point_world[:3]
-    
-    return RayHit(
-        hit=True,
-        t=t,
-        point=point_world,
-        normal=normal_world,
-        object_id=obj.object_id,
-        material_id=obj.material_id
-    )
+# =============================================================================
+# COGNITIVE PIPELINE ENGINE
+# =============================================================================
 
-
-def _ray_plane_intersection(ray: SpatialRay, obj: SceneObject) -> RayHit:
-    """Ray-plane intersection."""
-    # Assume plane is at origin with normal along Y axis in object space
-    plane_normal = np.array([0, 1, 0], dtype=np.float64)
-    
-    denom = np.dot(plane_normal, ray.direction)
-    
-    if abs(denom) < 1e-10:
-        return RayHit(hit=False)  # Ray parallel to plane
-    
-    t = -np.dot(plane_normal, ray.origin) / denom
-    
-    if t < ray.t_min or t > ray.t_max:
-        return RayHit(hit=False)
-    
-    hit_point = ray.origin + t * ray.direction
-    
-    # Transform to world space
-    normal_world = (obj.transform.matrix[:3, :3].T @ plane_normal)
-    normal_world = normalize_vector(normal_world)
-    point_world = obj.transform.matrix @ np.array([*hit_point, 1.0])
-    point_world = point_world[:3]
-    
-    return RayHit(
-        hit=True,
-        t=t,
-        point=point_world,
-        normal=normal_world,
-        object_id=obj.object_id,
-        material_id=obj.material_id
-    )
-
-
-def _project_point_to_plane(
-    point: Vector3D, 
-    plane_point: Vector3D, 
-    plane_normal: Vector3D
-) -> Vector3D:
-    """Project a point onto a plane."""
-    plane_normal = normalize_vector(plane_normal)
-    vec_to_point = point - plane_point
-    distance_to_plane = np.dot(vec_to_point, plane_normal)
-    return point - distance_to_plane * plane_normal
-
-
-def execute_monte_carlo_simulation(
-    operation: OperationName,
-    input_data: dict,
-    n_samples: int = 10000
-) -> StatisticalResult:
+class CognitivePipeline:
     """
-    Execute Monte Carlo simulation using vectorized numpy operations.
+    Main cognitive pipeline engine implementing the DAG-based approach.
+    
+    Pipeline stages:
+    1. Question Analysis - Parse and extract context
+    2. Requested Output - Determine what's being asked
+    3. Constraint Lock - Isolate relevant variables
+    4. Operation Lock - Identify primary operation (Winner Takes All)
+    5. Bucket Assignment - Determine cognitive bucket
+    6. Model Selection - Select physics framework
+    7. Tool Selection - Select mathematical tool
+    8. Nested Operation Discovery - Find dependent operations
+    9. Execution Planning - Order operations for execution
+    10. Execution - Compute results bottom-up
     """
-    # Extract distribution parameters
-    dist_type = input_data.get("distribution", "normal")
-    mean = np.array(input_data.get("mean", [0.0]), dtype=np.float64)
-    std = np.array(input_data.get("std", [1.0]), dtype=np.float64)
     
-    # Generate samples (vectorized)
-    if dist_type == "normal":
-        samples = np.random.normal(mean, std, size=(n_samples, len(mean)))
-    elif dist_type == "uniform":
-        low = input_data.get("low", mean - std)
-        high = input_data.get("high", mean + std)
-        samples = np.random.uniform(low, high, size=(n_samples, len(mean)))
-    else:
-        samples = np.random.normal(mean, std, size=(n_samples, len(mean)))
+    def __init__(self):
+        self.equation_db = get_equation_database()
+        self.sessions: Dict[str, CognitiveState] = {}
     
-    # Compute statistics (vectorized reduction)
-    sample_mean = np.mean(samples, axis=0)
-    sample_variance = np.var(samples, axis=0)
-    
-    # 95% confidence interval
-    z_score = 1.96
-    std_error = np.sqrt(sample_variance / n_samples)
-    ci_low = sample_mean - z_score * std_error
-    ci_high = sample_mean + z_score * std_error
-    
-    return StatisticalResult(
-        mean=sample_mean,
-        variance=sample_variance,
-        samples=n_samples,
-        confidence_interval=(float(ci_low[0]), float(ci_high[0])),
-        distribution_type=dist_type
-    )
-
-
-def execute_graph_operation(
-    operation: OperationName,
-    input_data: dict
-) -> SpatialQueryResult:
-    """
-    Execute graph-based operations using scipy sparse matrices.
-    """
-    from scipy import sparse
-    from scipy.sparse.csgraph import shortest_path, connected_components
-    
-    # Extract graph data
-    edges = input_data.get("edges", [])
-    nodes = input_data.get("nodes", 0)
-    
-    if not edges or nodes == 0:
-        return SpatialQueryResult(
-            query_type=operation,
-            results=np.array([]),
-            metadata={"error": "No graph data provided"}
+    def create_session(self, request: CognitiveRequest) -> CognitiveState:
+        """Create a new cognitive session."""
+        session_id = str(uuid.uuid4())[:8]
+        
+        # Stage 1: Question Analysis
+        keywords = extract_keywords(request.question_text)
+        parts = parse_question_parts(request.question_text)
+        
+        # Extract known values
+        numbers = extract_numbers_with_units(request.question_text)
+        known_values: List[Any] = []
+        for num in numbers:
+            known_values.append(ExtractedValue(
+                symbol="unknown",
+                value=num["value"],
+                unit=num["unit"],
+                description="Extracted from problem"
+            ))
+        
+        context = ProblemContext(
+            objects=[],
+            conditions=[],
+            constraints=[],
+            assumptions=[],
+            known_values=known_values
         )
-    
-    # Build adjacency matrix (vectorized)
-    row_indices = np.array([e[0] for e in edges], dtype=np.int32)
-    col_indices = np.array([e[1] for e in edges], dtype=np.int32)
-    weights = np.array([e[2] if len(e) > 2 else 1.0 for e in edges], dtype=np.float64)
-    
-    adj_matrix = sparse.csr_matrix(
-        (weights, (row_indices, col_indices)),
-        shape=(nodes, nodes)
-    )
-    
-    if operation == "COMPARE":
-        # Compute connected components
-        n_components, labels = connected_components(adj_matrix, directed=False)
-        results = np.array([n_components])
-    else:
-        # Compute shortest paths
-        source = input_data.get("source", 0)
-        dist_matrix = shortest_path(adj_matrix, method='D', directed=False)
-        results = dist_matrix[source]
-    
-    return SpatialQueryResult(
-        query_type=operation,
-        results=results,
-        metadata={"nodes": nodes, "edges": len(edges)}
-    )
-
-
-# =============================================================================
-# STAGE 4: EXECUTION → ANSWER (Result Formatting)
-# =============================================================================
-
-def format_answer_from_result(
-    result: Any,
-    operation: OperationName,
-    question: str
-) -> str:
-    """
-    Pure function: Format computational result into natural language answer.
-    """
-    if isinstance(result, SpatialQueryResult):
-        if operation == "TRANSFORM":
-            hits = result.results[result.results[:, 0] != np.inf]
-            if len(hits) > 0:
-                return f"Found {len(hits)} ray intersection(s). Closest hit at t={hits[0][0]:.4f} on object {int(hits[0][4])}"
-            return "No intersections found"
         
-        elif operation == "MEASURE":
-            if len(result.results) > 0:
-                return f"Measured distance: {result.results[0][0]:.6f} units"
-            return "Measurement failed"
-        
-        elif operation == "PROJECT":
-            if len(result.results) > 0:
-                proj = result.results[0]
-                return f"Projected point: ({proj[0]:.4f}, {proj[1]:.4f}, {proj[2]:.4f})"
-            return "Projection failed"
-        
-        elif operation == "COMPARE":
-            # Graph comparison results
-            if len(result.results) > 0:
-                if result.metadata and "nodes" in result.metadata:
-                    return f"Graph analysis: {result.metadata['nodes']} nodes, {result.metadata.get('edges', 0)} edges, {result.results[0]:.0f} connected component(s)"
-                return f"Comparison result: {result.results}"
-    
-    elif isinstance(result, StatisticalResult):
-        ci = result.confidence_interval
-        return (
-            f"Statistical analysis ({result.distribution_type}, n={result.samples}): "
-            f"mean={result.mean[0]:.6f}, variance={result.variance[0]:.6f}, "
-            f"95% CI=[{ci[0]:.6f}, {ci[1]:.6f}]"
+        question_analysis = QuestionAnalysis(
+            raw_text=request.question_text,
+            parts=parts,
+            current_part=request.selected_part,
+            context=context,
+            keywords=keywords,
+            tokens=keywords
         )
-    
-    elif isinstance(result, SimulationResult):
-        if result.success:
-            return f"Simulation completed in {result.iterations} iterations (convergence: {result.convergence_metric:.6f})"
-        return f"Simulation failed after {result.iterations} iterations"
-    
-    return f"Operation {operation} completed. Question: {question}"
-
-
-# =============================================================================
-# MAIN PIPELINE ORCHESTRATOR
-# =============================================================================
-
-def execute_cognitive_pipeline(request: CognitiveRequest) -> CognitiveState:
-    """
-    Main deterministic pipeline executor.
-    Follows: Question → Requested Output → Primary Operation → Bucket → Model → Tool → Execution → Answer
-    
-    All stages use pure functions. No mutable state except the final state construction.
-    """
-    execution_log = []
-    
-    # Stage 1: Task Identification (before method selection)
-    identified_op = identify_task_from_question(request.question, request.context_bucket)
-    execution_log.append(f"Identified operation: {identified_op}")
-    
-    # Validate single operation lock
-    if not validate_single_operation_lock(request.requested_operation, identified_op):
-        return CognitiveState(
-            request=request,
-            identified_operation=identified_op,
-            selected_model="FCIS",
-            selected_tool="NUMPY",
-            intermediate_results={},
-            final_answer=f"Error: Operation lock violation. Requested {request.requested_operation}, identified {identified_op}",
-            execution_log=tuple(execution_log)
+        
+        state = CognitiveState(
+            session_id=session_id,
+            question_analysis=question_analysis,
+            current_stage="question_analysis"
         )
-    
-    # Stage 2: Model Selection
-    selected_model = select_model_for_operation(
-        identified_op, 
-        request.context_bucket, 
-        request.input_data
-    )
-    execution_log.append(f"Selected model: {selected_model}")
-    
-    # Stage 3: Tool Selection
-    selected_tool = select_tool_for_model(selected_model, identified_op)
-    execution_log.append(f"Selected tool: {selected_tool}")
-    
-    # Stage 4: Execution
-    result = None
-    intermediate = {}
-    
-    try:
-        if request.context_bucket == "SPATIAL":
-            # Build scene from input data
-            scene = _build_scene_from_input(request.input_data)
-            result = execute_spatial_transform(scene, identified_op, request.input_data)
-            intermediate["scene_objects"] = len(scene.objects)
         
-        elif request.context_bucket == "PROBABILISTIC":
-            n_samples = request.parameters.get("n_samples", 10000) if request.parameters else 10000
-            result = execute_monte_carlo_simulation(identified_op, request.input_data, n_samples)
-            intermediate["samples"] = n_samples
+        self.sessions[session_id] = state
+        return state
+    
+    def analyze_question(self, session_id: str) -> CognitiveState:
+        """Stage 1: Complete question analysis."""
+        state = self.sessions.get(session_id)
+        if not state:
+            raise ValueError(f"Session {session_id} not found")
         
-        elif request.context_bucket == "LOGICAL":
-            result = execute_graph_operation(identified_op, request.input_data)
-            intermediate["graph_processed"] = True
+        # Already done in create_session, but can be refined
+        return state
+    
+    def determine_requested_output(self, session_id: str) -> CognitiveState:
+        """Stage 2: Determine what the question wants."""
+        state = self.sessions.get(session_id)
+        if not state:
+            raise ValueError(f"Session {session_id} not found")
         
+        question_text = state.question_analysis.raw_text
+        if state.question_analysis.current_part and state.question_analysis.parts:
+            part_text = state.question_analysis.parts.get(state.question_analysis.current_part, "")
+            if part_text:
+                question_text = part_text
+        
+        keywords = state.question_analysis.keywords
+        requested_output = infer_requested_output(question_text, keywords)
+        
+        # Create immutable new state
+        state = CognitiveState(
+            session_id=state.session_id,
+            question_analysis=state.question_analysis,
+            requested_output=requested_output,
+            constraint_lock=state.constraint_lock,
+            operation_lock=state.operation_lock,
+            bucket_assignment=state.bucket_assignment,
+            model_selection=state.model_selection,
+            tool_selection=state.tool_selection,
+            execution_plan=state.execution_plan,
+            step_results=state.step_results,
+            final_result=state.final_result,
+            audit_feedback=state.audit_feedback,
+            user_prompts=state.user_prompts,
+            user_responses=state.user_responses,
+            current_stage="requested_output",
+            is_complete=state.is_complete,
+            has_errors=state.has_errors,
+            error_messages=state.error_messages
+        )
+        
+        self.sessions[session_id] = state
+        return state
+    
+    def apply_constraint_lock(self, session_id: str, user_values: Optional[Dict[str, float]] = None) -> CognitiveState:
+        """Stage 3: Isolate variables and constraints."""
+        state = self.sessions.get(session_id)
+        if not state:
+            raise ValueError(f"Session {session_id} not found")
+        
+        # Extract relevant variables based on requested output
+        relevant_vars = []
+        fixed_params = {}
+        variable_params = {}
+        
+        # Simple heuristic: numbers in problem are fixed parameters
+        for kv in state.question_analysis.context.known_values:
+            if isinstance(kv, ExtractedValue):
+                fixed_params[kv.symbol] = kv
+        
+        constraint_lock = ConstraintLock(
+            relevant_variables=relevant_vars,
+            ignored_variables=[],
+            fixed_parameters=fixed_params,
+            variable_parameters=variable_params,
+            boundary_conditions=["horizontal floor", "from rest"] if "rest" in state.question_analysis.raw_text.lower() else [],
+            scope_keywords=state.question_analysis.keywords
+        )
+        
+        state = CognitiveState(
+            session_id=state.session_id,
+            question_analysis=state.question_analysis,
+            requested_output=state.requested_output,
+            constraint_lock=constraint_lock,
+            operation_lock=state.operation_lock,
+            bucket_assignment=state.bucket_assignment,
+            model_selection=state.model_selection,
+            tool_selection=state.tool_selection,
+            execution_plan=state.execution_plan,
+            step_results=state.step_results,
+            final_result=state.final_result,
+            audit_feedback=state.audit_feedback,
+            user_prompts=state.user_prompts,
+            user_responses=state.user_responses,
+            current_stage="constraint_lock",
+            is_complete=state.is_complete,
+            has_errors=state.has_errors,
+            error_messages=state.error_messages
+        )
+        
+        self.sessions[session_id] = state
+        return state
+    
+    def determine_operation_lock(self, session_id: str) -> CognitiveState:
+        """Stage 4: Determine primary operation (Winner Takes All)."""
+        state = self.sessions.get(session_id)
+        if not state:
+            raise ValueError(f"Session {session_id} not found")
+        
+        keywords = state.question_analysis.keywords
+        primary_op, confidence, reasoning = detect_primary_operation(keywords)
+        
+        # Detect secondary operations
+        secondary_ops = []
+        if "angle" in " ".join(keywords) or "°" in state.question_analysis.raw_text:
+            secondary_ops.append("transform")
+        if "from rest" in state.question_analysis.raw_text.lower():
+            secondary_ops.append("estimate")
+        
+        operation_lock = OperationLock(
+            primary_operation=primary_op,
+            confidence=confidence,
+            reasoning=reasoning,
+            secondary_operations=secondary_ops,
+            operation_order=[primary_op] + secondary_ops
+        )
+        
+        state = CognitiveState(
+            session_id=state.session_id,
+            question_analysis=state.question_analysis,
+            requested_output=state.requested_output,
+            constraint_lock=state.constraint_lock,
+            operation_lock=operation_lock,
+            bucket_assignment=state.bucket_assignment,
+            model_selection=state.model_selection,
+            tool_selection=state.tool_selection,
+            execution_plan=state.execution_plan,
+            step_results=state.step_results,
+            final_result=state.final_result,
+            audit_feedback=state.audit_feedback,
+            user_prompts=state.user_prompts,
+            user_responses=state.user_responses,
+            current_stage="operation_lock",
+            is_complete=state.is_complete,
+            has_errors=state.has_errors,
+            error_messages=state.error_messages
+        )
+        
+        self.sessions[session_id] = state
+        return state
+    
+    def assign_bucket(self, session_id: str) -> CognitiveState:
+        """Stage 5: Assign cognitive bucket."""
+        state = self.sessions.get(session_id)
+        if not state:
+            raise ValueError(f"Session {session_id} not found")
+        
+        if not state.operation_lock:
+            raise ValueError("Operation lock must be determined first")
+        
+        keywords = state.question_analysis.keywords
+        operation = state.operation_lock.primary_operation
+        
+        bucket, confidence, reasoning = detect_bucket(keywords, operation)
+        
+        bucket_assignment = BucketAssignment(
+            primary_bucket=bucket,
+            confidence=confidence,
+            reasoning=reasoning,
+            alternative_buckets=[]
+        )
+        
+        state = CognitiveState(
+            session_id=state.session_id,
+            question_analysis=state.question_analysis,
+            requested_output=state.requested_output,
+            constraint_lock=state.constraint_lock,
+            operation_lock=state.operation_lock,
+            bucket_assignment=bucket_assignment,
+            model_selection=state.model_selection,
+            tool_selection=state.tool_selection,
+            execution_plan=state.execution_plan,
+            step_results=state.step_results,
+            final_result=state.final_result,
+            audit_feedback=state.audit_feedback,
+            user_prompts=state.user_prompts,
+            user_responses=state.user_responses,
+            current_stage="bucket_assignment",
+            is_complete=state.is_complete,
+            has_errors=state.has_errors,
+            error_messages=state.error_messages
+        )
+        
+        self.sessions[session_id] = state
+        return state
+    
+    def select_model(self, session_id: str) -> CognitiveState:
+        """Stage 6: Select physics model."""
+        state = self.sessions.get(session_id)
+        if not state:
+            raise ValueError(f"Session {session_id} not found")
+        
+        if not state.bucket_assignment:
+            raise ValueError("Bucket assignment must be determined first")
+        
+        keywords = state.question_analysis.keywords
+        bucket = state.bucket_assignment.primary_bucket
+        
+        model, confidence, reasoning = detect_model(keywords, bucket)
+        
+        model_selection = ModelSelection(
+            primary_model=model,
+            confidence=confidence,
+            reasoning=reasoning,
+            supporting_principles=[]
+        )
+        
+        state = CognitiveState(
+            session_id=state.session_id,
+            question_analysis=state.question_analysis,
+            requested_output=state.requested_output,
+            constraint_lock=state.constraint_lock,
+            operation_lock=state.operation_lock,
+            bucket_assignment=state.bucket_assignment,
+            model_selection=model_selection,
+            tool_selection=state.tool_selection,
+            execution_plan=state.execution_plan,
+            step_results=state.step_results,
+            final_result=state.final_result,
+            audit_feedback=state.audit_feedback,
+            user_prompts=state.user_prompts,
+            user_responses=state.user_responses,
+            current_stage="model_selection",
+            is_complete=state.is_complete,
+            has_errors=state.has_errors,
+            error_messages=state.error_messages
+        )
+        
+        self.sessions[session_id] = state
+        return state
+    
+    def select_tool(self, session_id: str) -> CognitiveState:
+        """Stage 7: Select mathematical tool."""
+        state = self.sessions.get(session_id)
+        if not state:
+            raise ValueError(f"Session {session_id} not found")
+        
+        if not state.operation_lock or not state.model_selection:
+            raise ValueError("Operation and model must be determined first")
+        
+        operation = state.operation_lock.primary_operation
+        model = state.model_selection.primary_model
+        
+        tool, confidence, reasoning = detect_tool(model, operation)
+        
+        # Get required formulas from equation database
+        equations = self.equation_db.search_by_operation(operation.value if hasattr(operation, 'value') else operation)
+        required_formulas = [eq.formula for eq in equations[:3]]
+        
+        tool_selection = ToolSelection(
+            primary_tool=tool,
+            confidence=confidence,
+            reasoning=reasoning,
+            required_formulas=required_formulas
+        )
+        
+        state = CognitiveState(
+            session_id=state.session_id,
+            question_analysis=state.question_analysis,
+            requested_output=state.requested_output,
+            constraint_lock=state.constraint_lock,
+            operation_lock=state.operation_lock,
+            bucket_assignment=state.bucket_assignment,
+            model_selection=state.model_selection,
+            tool_selection=tool_selection,
+            execution_plan=state.execution_plan,
+            step_results=state.step_results,
+            final_result=state.final_result,
+            audit_feedback=state.audit_feedback,
+            user_prompts=state.user_prompts,
+            user_responses=state.user_responses,
+            current_stage="tool_selection",
+            is_complete=state.is_complete,
+            has_errors=state.has_errors,
+            error_messages=state.error_messages
+        )
+        
+        self.sessions[session_id] = state
+        return state
+    
+    def discover_nested_operations(self, session_id: str, user_confirms_secondary: bool = True) -> CognitiveState:
+        """Stage 8: Discover nested/sub-operations in dependency chain."""
+        state = self.sessions.get(session_id)
+        if not state:
+            raise ValueError(f"Session {session_id} not found")
+        
+        if not state.operation_lock or not state.bucket_assignment or not state.model_selection or not state.tool_selection:
+            raise ValueError("All previous stages must be complete")
+        
+        nested_ops: List[NestedOperation] = []
+        order_counter = 1
+        
+        # Check for vector resolution needs (angles in problem)
+        raw_text = state.question_analysis.raw_text.lower()
+        if ("angle" in raw_text or "°" in raw_text or "deg" in raw_text) and user_confirms_secondary:
+            nested_ops.append(NestedOperation(
+                order=order_counter,
+                operation="transform",
+                bucket="transformation",
+                model="newtonian_mechanics",
+                tool="trigonometry",
+                target_variable="F_x",
+                dependencies=[]
+            ))
+            order_counter += 1
+        
+        # Check for equilibrium needs (normal force, friction)
+        if ("friction" in raw_text or "normal" in raw_text) and user_confirms_secondary:
+            nested_ops.append(NestedOperation(
+                order=order_counter,
+                operation="scale",
+                bucket="dynamics",
+                model="newtonian_mechanics",
+                tool="algebraic_manipulation",
+                target_variable="f_friction",
+                dependencies=[]
+            ))
+            order_counter += 1
+        
+        # Build execution plan
+        primary_op_lock = state.operation_lock
+        
+        # Determine execution order (reverse dependency order)
+        execution_order = list(range(len(nested_ops), 0, -1))  # Execute nested first, then primary
+        
+        # Determine final formula based on primary operation
+        final_formula = ""
+        if primary_op_lock.primary_operation == "accumulate":
+            final_formula = "W = F * d * cos(θ)"
+        elif primary_op_lock.primary_operation == "transform":
+            final_formula = "F_x = F * cos(θ), F_y = F * sin(θ)"
+        elif primary_op_lock.primary_operation == "scale":
+            final_formula = "F = m * a"
+        elif primary_op_lock.primary_operation == "estimate":
+            final_formula = "v_avg = Δx / Δt"
+        elif primary_op_lock.primary_operation == "differentiate":
+            final_formula = "a = dv/dt"
+        
+        execution_plan = ExecutionPlan(
+            primary_operation=primary_op_lock,
+            nested_operations=nested_ops,
+            execution_order=execution_order,
+            final_formula=final_formula,
+            intermediate_results={}
+        )
+        
+        state = CognitiveState(
+            session_id=state.session_id,
+            question_analysis=state.question_analysis,
+            requested_output=state.requested_output,
+            constraint_lock=state.constraint_lock,
+            operation_lock=state.operation_lock,
+            bucket_assignment=state.bucket_assignment,
+            model_selection=state.model_selection,
+            tool_selection=state.tool_selection,
+            execution_plan=execution_plan,
+            step_results=state.step_results,
+            final_result=state.final_result,
+            audit_feedback=state.audit_feedback,
+            user_prompts=state.user_prompts,
+            user_responses=state.user_responses,
+            current_stage="execution_plan",
+            is_complete=False,
+            has_errors=state.has_errors,
+            error_messages=state.error_messages
+        )
+        
+        self.sessions[session_id] = state
+        return state
+    
+    def execute_step(
+        self, 
+        session_id: str, 
+        step_number: int, 
+        equation_id: str, 
+        input_values: Dict[str, float]
+    ) -> Tuple[CognitiveState, StepResult]:
+        """Execute a single computation step."""
+        state = self.sessions.get(session_id)
+        if not state:
+            raise ValueError(f"Session {session_id} not found")
+        
+        equation = self.equation_db.get_equation(equation_id)
+        if not equation:
+            raise ValueError(f"Equation {equation_id} not found")
+        
+        # Determine operation and variable name
+        if state.execution_plan and step_number <= len(state.execution_plan.nested_operations):
+            nested_op = state.execution_plan.nested_operations[step_number - 1]
+            operation = nested_op.operation
+            var_name = nested_op.target_variable
         else:
-            # Default FCIS execution
-            scene = _build_scene_from_input(request.input_data)
-            result = execute_spatial_transform(scene, identified_op, request.input_data)
+            operation = state.operation_lock.primary_operation if state.operation_lock else "accumulate"
+            var_name = state.requested_output.symbol if state.requested_output else "result"
         
-        execution_log.append(f"Execution completed successfully")
-    
-    except Exception as e:
-        execution_log.append(f"Execution error: {str(e)}")
-        return CognitiveState(
-            request=request,
-            identified_operation=identified_op,
-            selected_model=selected_model,
-            selected_tool=selected_tool,
-            intermediate_results=intermediate,
-            final_answer=f"Execution failed: {str(e)}",
-            execution_log=tuple(execution_log)
+        # Simple equation evaluation (expand this for production)
+        try:
+            result_value = self._evaluate_equation(equation, input_values)
+            success = True
+            error_msg = None
+        except Exception as e:
+            result_value = 0.0
+            success = False
+            error_msg = str(e)
+        
+        step_result = StepResult(
+            step_number=step_number,
+            operation=operation,
+            variable_name=var_name,
+            value=result_value,
+            unit=equation.variables.get(list(equation.variables.keys())[0], {}).get("unit", ""),
+            formula_used=equation.formula,
+            inputs=input_values,
+            success=success,
+            error_message=error_msg
         )
-    
-    # Stage 5: Answer Formation
-    final_answer = format_answer_from_result(result, identified_op, request.question)
-    execution_log.append("Answer formatted")
-    
-    return CognitiveState(
-        request=request,
-        identified_operation=identified_op,
-        selected_model=selected_model,
-        selected_tool=selected_tool,
-        intermediate_results=intermediate,
-        final_answer=final_answer,
-        execution_log=tuple(execution_log)
-    )
-
-
-def _build_scene_from_input(input_data: dict) -> Scene:
-    """
-    Build a Scene object from input data dictionary.
-    Pure function for data transformation.
-    """
-    objects_list = []
-    global_min = np.array([np.inf, np.inf, np.inf])
-    global_max = np.array([-np.inf, -np.inf, -np.inf])
-    
-    raw_objects = input_data.get("objects", [])
-    
-    for idx, obj_data in enumerate(raw_objects):
-        obj_type = obj_data.get("type", "SPHERE").upper()
         
-        # Create transform
-        translation = np.array(obj_data.get("translation", [0, 0, 0]), dtype=np.float64)
-        rotation = obj_data.get("rotation", None)
-        if rotation:
-            rotation = np.array(rotation, dtype=np.float64)
-        scale = np.array(obj_data.get("scale", [1, 1, 1]), dtype=np.float64)
+        # Update state with new step result
+        updated_results = list(state.step_results) + [step_result]
         
-        transform_matrix = create_transform_matrix(
-            translation=translation,
-            rotation_quaternion=rotation,
-            scale=scale
+        state = CognitiveState(
+            session_id=state.session_id,
+            question_analysis=state.question_analysis,
+            requested_output=state.requested_output,
+            constraint_lock=state.constraint_lock,
+            operation_lock=state.operation_lock,
+            bucket_assignment=state.bucket_assignment,
+            model_selection=state.model_selection,
+            tool_selection=state.tool_selection,
+            execution_plan=state.execution_plan,
+            step_results=updated_results,
+            final_result=state.final_result,
+            audit_feedback=state.audit_feedback,
+            user_prompts=state.user_prompts,
+            user_responses=state.user_responses,
+            current_stage="executing",
+            is_complete=False,
+            has_errors=not success,
+            error_messages=[error_msg] if error_msg else state.error_messages
         )
-        transform = Transform(matrix=transform_matrix)
         
-        # Compute bounds based on object type
-        if obj_type == "SPHERE":
-            radius = obj_data.get("radius", 1.0)
-            half_extents = np.array([radius, radius, radius])
-            min_pt = translation - half_extents
-            max_pt = translation + half_extents
-            bounds = BoundingBox(min_point=min_pt, max_point=max_pt)
-            
-            scene_obj = SceneObject(
-                object_id=idx,
-                object_type="SPHERE",
-                transform=transform,
-                material_id=obj_data.get("material_id", 0),
-                bounds=bounds,
-                radius=radius
-            )
-        
-        elif obj_type == "BOX":
-            half_extents = np.array(obj_data.get("half_extents", [1, 1, 1]), dtype=np.float64)
-            min_pt = translation - half_extents
-            max_pt = translation + half_extents
-            bounds = BoundingBox(min_point=min_pt, max_point=max_pt)
-            
-            scene_obj = SceneObject(
-                object_id=idx,
-                object_type="BOX",
-                transform=transform,
-                material_id=obj_data.get("material_id", 0),
-                bounds=bounds,
-                half_extents=half_extents
-            )
-        
-        elif obj_type == "PLANE":
-            # Infinite plane, use large bounds
-            large_val = 1e6
-            bounds = BoundingBox(
-                min_point=np.array([-large_val, -large_val, -large_val]),
-                max_point=np.array([large_val, large_val, large_val])
-            )
-            scene_obj = SceneObject(
-                object_id=idx,
-                object_type="PLANE",
-                transform=transform,
-                material_id=obj_data.get("material_id", 0),
-                bounds=bounds
-            )
-        
-        else:
-            # Default to sphere
-            radius = 1.0
-            half_extents = np.array([radius, radius, radius])
-            min_pt = translation - half_extents
-            max_pt = translation + half_extents
-            bounds = BoundingBox(min_point=min_pt, max_point=max_pt)
-            
-            scene_obj = SceneObject(
-                object_id=idx,
-                object_type="SPHERE",
-                transform=transform,
-                material_id=obj_data.get("material_id", 0),
-                bounds=bounds,
-                radius=radius
-            )
-        
-        objects_list.append(scene_obj)
-        global_min = np.minimum(global_min, bounds.min_point)
-        global_max = np.maximum(global_max, bounds.max_point)
+        self.sessions[session_id] = state
+        return state, step_result
     
-    # Handle empty scene
-    if not objects_list:
-        global_min = np.array([-1, -1, -1])
-        global_max = np.array([1, 1, 1])
+    def _evaluate_equation(self, equation: Equation, input_values: Dict[str, float]) -> float:
+        """Evaluate an equation with given input values."""
+        # This is a simplified evaluator - expand for production
+        eq_id = equation.id
+        
+        if eq_id == "work_constant_force":
+            F = input_values.get("F", 0)
+            d = input_values.get("d", 0)
+            theta_deg = input_values.get("θ", 0)
+            import math
+            theta_rad = math.radians(theta_deg)
+            return F * d * math.cos(theta_rad)
+        
+        elif eq_id == "vector_components":
+            F = input_values.get("F", 0)
+            theta_deg = input_values.get("θ", 0)
+            import math
+            theta_rad = math.radians(theta_deg)
+            # Return F_x component
+            return F * math.cos(theta_rad)
+        
+        elif eq_id == "friction_force":
+            mu = input_values.get("μ", 0)
+            N = input_values.get("N", 0)
+            return mu * N
+        
+        # Default: return sum of inputs (placeholder)
+        return sum(input_values.values())
     
-    global_bounds = BoundingBox(min_point=global_min, max_point=global_max)
+    def finalize_result(self, session_id: str) -> CognitiveState:
+        """Finalize the cognitive result after all steps executed."""
+        state = self.sessions.get(session_id)
+        if not state:
+            raise ValueError(f"Session {session_id} not found")
+        
+        if not state.requested_output:
+            raise ValueError("Requested output not determined")
+        
+        # Get final value from last successful step
+        final_value = 0.0
+        final_unit = state.requested_output.unit
+        
+        if state.step_results:
+            last_successful = next((sr for sr in reversed(state.step_results) if sr.success), None)
+            if last_successful:
+                final_value = last_successful.value
+                final_unit = last_successful.unit
+        
+        cognitive_result = CognitiveResult(
+            question_part=state.question_analysis.current_part or "main",
+            requested_output=state.requested_output,
+            final_value=final_value,
+            unit=final_unit,
+            significant_figures=3,
+            step_results=state.step_results,
+            audit_feedback=None  # Would be filled by LLM audit
+        )
+        
+        state = CognitiveState(
+            session_id=state.session_id,
+            question_analysis=state.question_analysis,
+            requested_output=state.requested_output,
+            constraint_lock=state.constraint_lock,
+            operation_lock=state.operation_lock,
+            bucket_assignment=state.bucket_assignment,
+            model_selection=state.model_selection,
+            tool_selection=state.tool_selection,
+            execution_plan=state.execution_plan,
+            step_results=state.step_results,
+            final_result=cognitive_result,
+            audit_feedback=state.audit_feedback,
+            user_prompts=state.user_prompts,
+            user_responses=state.user_responses,
+            current_stage="complete",
+            is_complete=True,
+            has_errors=state.has_errors,
+            error_messages=state.error_messages
+        )
+        
+        self.sessions[session_id] = state
+        return state
     
-    return Scene(
-        objects=tuple(objects_list),
-        global_bounds=global_bounds,
-        acceleration_type="BVH"
-    )
+    def get_state(self, session_id: str) -> CognitiveState:
+        """Get current state of a session."""
+        state = self.sessions.get(session_id)
+        if not state:
+            raise ValueError(f"Session {session_id} not found")
+        return state
