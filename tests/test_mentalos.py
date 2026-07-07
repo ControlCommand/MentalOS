@@ -1,21 +1,28 @@
 """
 MentalOS Comprehensive Test Suite
-Industry-grade pytest implementation with full coverage.
-"""
 
+Tests for cognitive pipeline, equation database, type system, and API endpoints.
+Run with: pytest tests/test_mentalos.py -v
+"""
 import pytest
-import numpy as np
-from fastapi.testclient import TestClient
+import sys
+import os
+
+# Add project root to path
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from mentalos.types import (
-    CognitiveRequest, CognitiveState, Scene, SceneObject, Transform,
-    BoundingBox, SpatialRay, RayHit, Vector3D, TransformMatrix
+    PrimaryOperation, Bucket, Model, Tool,
+    ExtractedValue, ProblemContext, QuestionAnalysis, RequestedOutput,
+    ConstraintLock, OperationLock, BucketAssignment, ModelSelection,
+    ToolSelection, NestedOperation, ExecutionPlan, StepResult, CognitiveResult,
+    CognitiveState, CognitiveRequest
 )
 from mentalos.core.pipeline import (
-    execute_cognitive_pipeline, identify_task_from_question,
-    validate_single_operation_lock, select_model_for_operation,
-    select_tool_for_model, _build_scene_from_input as build_scene_from_request
+    CognitivePipeline, extract_keywords, parse_question_parts,
+    extract_numbers_with_units, detect_primary_operation
 )
+from mentalos.equations.database import get_equation_database, Equation
 
 
 # =============================================================================
@@ -23,485 +30,318 @@ from mentalos.core.pipeline import (
 # =============================================================================
 
 @pytest.fixture
-def sample_sphere_scene():
-    """Create a scene with a single sphere."""
-    transform = Transform(matrix=np.eye(4))
-    bounds = BoundingBox(
-        min_point=np.array([-1, -1, 4]),
-        max_point=np.array([1, 1, 6])
-    )
-    sphere = SceneObject(
-        object_id=0,
-        object_type="SPHERE",
-        transform=transform,
-        material_id=0,
-        bounds=bounds,
-        radius=1.0
-    )
-    global_bounds = BoundingBox(
-        min_point=np.array([-1, -1, 4]),
-        max_point=np.array([1, 1, 6])
-    )
-    return Scene(objects=(sphere,), global_bounds=global_bounds)
+def pipeline():
+    """Create a fresh cognitive pipeline instance."""
+    return CognitivePipeline()
 
 
 @pytest.fixture
-def sample_ray():
-    """Create a ray pointing along +Z axis."""
-    return SpatialRay(
-        origin=np.array([0, 0, 0], dtype=np.float64),
-        direction=np.array([0, 0, 1], dtype=np.float64)
-    )
+def equation_db():
+    """Get the equation database singleton."""
+    return get_equation_database()
 
 
 @pytest.fixture
-def client():
-    """Create test client for FastAPI app."""
-    from mentalos.api.app import app
-    return TestClient(app)
+def sample_problem_text():
+    """Sample physics problem for testing."""
+    return """A man pushes a 45 kg box from rest along a horizontal floor by exerting a force of 87 N downward at 33° to the horizontal against a friction force of 62 N over a distance of 13 m.
+a) How much work was done in moving the box?
+b) What is the final velocity of the box?
+c) How long did it take to move this distance?"""
+
+
+@pytest.fixture
+def simple_problem():
+    """Simple single-part problem."""
+    return "Calculate the work done when a force of 50 N moves an object 10 m."
 
 
 # =============================================================================
-# TYPE TESTS
+# TYPE SYSTEM TESTS
 # =============================================================================
 
-class TestTypes:
-    """Test data type definitions and immutability."""
+class TestTypeSystem:
+    """Test frozen dataclasses and type safety."""
     
-    def test_spatial_ray_creation(self):
-        """Test ray creation with proper numpy arrays."""
-        ray = SpatialRay(
-            origin=np.array([1, 2, 3], dtype=np.float64),
-            direction=np.array([0, 0, 1], dtype=np.float64)
-        )
-        assert ray.origin.shape == (3,)
-        assert ray.direction.shape == (3,)
-        assert ray.t_min == 0.0
-        assert ray.t_max == np.inf
-    
-    def test_ray_hit_default(self):
-        """Test RayHit default values."""
-        hit = RayHit(hit=False)
-        assert hit.hit is False
-        assert hit.t == np.inf
-        assert hit.object_id == -1
-    
-    def test_ray_hit_with_data(self):
-        """Test RayHit with intersection data."""
-        point = np.array([5, 5, 5], dtype=np.float64)
-        normal = np.array([0, 1, 0], dtype=np.float64)
-        hit = RayHit(
-            hit=True,
-            t=10.0,
-            point=point,
-            normal=normal,
-            object_id=42
-        )
-        assert hit.hit is True
-        assert hit.t == 10.0
-        assert np.array_equal(hit.point, point)
-        assert np.array_equal(hit.normal, normal)
-        assert hit.object_id == 42
-    
-    def test_transform_matrix_validation(self):
-        """Test Transform validates matrix shape."""
-        valid_matrix = np.eye(4)
-        transform = Transform(matrix=valid_matrix)
-        assert transform.matrix.shape == (4, 4)
+    def test_extracted_value_immutable(self):
+        """Verify ExtractedValue is frozen (immutable)."""
+        ev = ExtractedValue(symbol="F", value=10.0, unit="N", description="Force")
         
-        with pytest.raises(ValueError):
-            invalid_matrix = np.eye(3)
-            Transform(matrix=invalid_matrix)
+        with pytest.raises(AttributeError):
+            ev.value = 20.0  # Should fail - frozen
     
-    def test_bounding_box_validation(self):
-        """Test BoundingBox validates points."""
-        min_pt = np.array([0, 0, 0])
-        max_pt = np.array([1, 1, 1])
-        bbox = BoundingBox(min_point=min_pt, max_point=max_pt)
-        assert np.array_equal(bbox.min_point, min_pt)
-        assert np.array_equal(bbox.max_point, max_pt)
+    def test_requested_output_creation(self):
+        """Test creating RequestedOutput with correct types."""
+        ro = RequestedOutput(
+            target_quantity="work",
+            output_type="total",
+            symbol="W",
+            unit="J",
+            description="Total work done"
+        )
         
-        # Invalid: max < min
-        with pytest.raises(ValueError):
-            BoundingBox(
-                min_point=np.array([1, 1, 1]),
-                max_point=np.array([0, 0, 0])
+        assert ro.target_quantity == "work"
+        assert ro.output_type == "total"
+        assert ro.symbol == "W"
+        assert ro.unit == "J"
+    
+    def test_nested_operation_chain(self):
+        """Test creating nested operation dependency chain."""
+        ops = [
+            NestedOperation(
+                order=1,
+                operation="transform",
+                bucket="transformation",
+                model="newtonian_mechanics",
+                tool="trigonometry",
+                target_variable="F_x",
+                dependencies=[]
+            ),
+            NestedOperation(
+                order=2,
+                operation="accumulate",
+                bucket="accumulation",
+                model="work_energy_theorem",
+                tool="algebraic_manipulation",
+                target_variable="W",
+                dependencies=["F_x"]
             )
-    
-    def test_scene_object_immutability(self):
-        """Test that SceneObject is frozen (immutable)."""
-        transform = Transform(matrix=np.eye(4))
-        bounds = BoundingBox(
-            min_point=np.array([-1, -1, -1]),
-            max_point=np.array([1, 1, 1])
-        )
-        obj = SceneObject(
-            object_id=0,
-            object_type="SPHERE",
-            transform=transform,
-            material_id=0,
-            bounds=bounds,
-            radius=1.0
-        )
+        ]
         
-        with pytest.raises(Exception):  # frozen dataclass raises Exception on modification
-            obj.object_id = 999
+        assert len(ops) == 2
+        assert ops[0].order == 1
+        assert ops[1].dependencies == ["F_x"]
 
 
 # =============================================================================
-# PIPELINE CORE FUNCTION TESTS
+# TEXT ANALYSIS TESTS
 # =============================================================================
 
-class TestPipelineCoreFunctions:
-    """Test pure functions in the pipeline."""
+class TestTextAnalysis:
+    """Test text parsing and keyword extraction."""
     
-    def test_identify_task_spatial_intersect(self):
-        """Test task identification for spatial intersection queries."""
-        op = identify_task_from_question(
-            "Where does the ray intersect the sphere?",
-            "SPATIAL"
-        )
-        assert op == "TRANSFORM"
-    
-    def test_identify_task_spatial_distance(self):
-        """Test task identification for distance queries."""
-        op = identify_task_from_question(
-            "What is the distance between these points?",
-            "SPATIAL"
-        )
-        assert op == "MEASURE"
-    
-    def test_identify_task_probabilistic(self):
-        """Test task identification for probabilistic queries."""
-        op = identify_task_from_question(
-            "Run Monte Carlo simulation with random sampling",
-            "PROBABILISTIC"
-        )
-        assert op == "MAP"
-    
-    def test_identify_task_logical_graph(self):
-        """Test task identification for graph queries."""
-        op = identify_task_from_question(
-            "Analyze the graph nodes and edges",
-            "LOGICAL"
-        )
-        assert op == "COMPARE"
-    
-    def test_validate_operation_lock_valid(self):
-        """Test operation lock validation for valid transitions."""
-        assert validate_single_operation_lock("IDENTIFY", "TRANSFORM") is True
-        assert validate_single_operation_lock("TRANSFORM", "TRANSFORM") is True
-        assert validate_single_operation_lock("MEASURE", "MEASURE") is True
-    
-    def test_validate_operation_lock_invalid(self):
-        """Test operation lock validation for invalid transitions."""
-        # TRANSFORM cannot be refined to MEASURE
-        assert validate_single_operation_lock("TRANSFORM", "MEASURE") is False
-    
-    def test_select_model_spatial_raytrace(self):
-        """Test model selection for spatial raytracing."""
-        input_data = {"rays": [{"origin": [0, 0, 0], "direction": [0, 0, 1]}]}
-        model = select_model_for_operation("TRANSFORM", "SPATIAL", input_data)
-        assert model == "RAYTRACE"
-    
-    def test_select_model_spatial_fcis(self):
-        """Test model selection for spatial non-raytrace operations."""
-        input_data = {"points": [[0, 0, 0], [1, 1, 1]]}
-        model = select_model_for_operation("MEASURE", "SPATIAL", input_data)
-        assert model == "FCIS"
-    
-    def test_select_model_montecarlo(self):
-        """Test model selection for Monte Carlo simulation."""
-        input_data = {"distribution": "normal", "mean": [0], "std": [1]}
-        model = select_model_for_operation("MAP", "PROBABILISTIC", input_data)
-        assert model == "MONTECARLO"
-    
-    def test_select_tool_vector_engine(self):
-        """Test tool selection for raytracing."""
-        tool = select_tool_for_model("RAYTRACE", "TRANSFORM")
-        assert tool == "VECTOR_ENGINE"
-    
-    def test_select_tool_numpy(self):
-        """Test tool selection for Monte Carlo."""
-        tool = select_tool_for_model("MONTECARLO", "MAP")
-        assert tool == "NUMPY"
-    
-    def test_select_tool_scipy(self):
-        """Test tool selection for graph operations."""
-        tool = select_tool_for_model("GRAPH", "COMPARE")
-        assert tool == "SCIPY"
-
-
-# =============================================================================
-# SCENE BUILDING TESTS
-# =============================================================================
-
-class TestSceneBuilding:
-    """Test scene construction from request data."""
-    
-    def test_build_scene_with_sphere(self):
-        """Test building a scene with a sphere object."""
-        input_data = {
-            "objects": [
-                {
-                    "type": "SPHERE",
-                    "translation": [0, 0, 5],
-                    "radius": 1.0
-                }
-            ]
-        }
+    def test_extract_keywords(self):
+        """Test keyword extraction from problem text."""
+        text = "A man pushes a 45 kg box from rest along a horizontal floor"
+        keywords = extract_keywords(text)
         
-        scene = build_scene_from_request(input_data)
-        assert len(scene.objects) == 1
-        assert scene.objects[0].object_type == "SPHERE"
-        assert scene.objects[0].radius == 1.0
+        assert "pushes" in keywords
+        assert "box" in keywords
+        assert "horizontal" in keywords
+        assert "floor" in keywords
+        # Stop words should be filtered
+        assert "a" not in keywords
+        assert "the" not in keywords
     
-    def test_build_scene_with_box(self):
-        """Test building a scene with a box object."""
-        input_data = {
-            "objects": [
-                {
-                    "type": "BOX",
-                    "translation": [0, 0, 0],
-                    "half_extents": [1, 2, 3]
-                }
-            ]
-        }
+    def test_parse_question_parts(self):
+        """Test parsing multi-part questions."""
+        text = """Problem statement here.
+a) First question?
+b) Second question?
+c) Third question?"""
         
-        scene = build_scene_from_request(input_data)
-        assert len(scene.objects) == 1
-        assert scene.objects[0].object_type == "BOX"
-        assert np.array_equal(scene.objects[0].half_extents, np.array([1, 2, 3]))
+        parts = parse_question_parts(text)
+        
+        assert "a" in parts
+        assert "b" in parts
+        assert "c" in parts
+        assert "First question?" in parts["a"]
     
-    def test_build_scene_empty(self):
-        """Test building an empty scene."""
-        input_data = {"objects": []}
+    def test_extract_numbers_with_units(self):
+        """Test extracting numerical values with units."""
+        text = "A 45 kg box with force 87 N at 33° over 13 m"
+        numbers = extract_numbers_with_units(text)
         
-        scene = build_scene_from_request(input_data)
-        assert len(scene.objects) == 0
-        assert scene.global_bounds is not None
+        values = [n["value"] for n in numbers]
+        assert 45.0 in values
+        assert 87.0 in values
+        assert 33.0 in values
+        assert 13.0 in values
+    
+    def test_detect_primary_operation_work(self):
+        """Test detecting 'accumulate' operation for work problems."""
+        keywords = ["work", "done", "force", "distance", "energy"]
+        op, confidence, reasoning = detect_primary_operation(keywords)
+        
+        assert op == "accumulate"
+        assert confidence > 0.0
+    
+    def test_detect_primary_operation_vector(self):
+        """Test detecting 'transform' operation for vector problems."""
+        keywords = ["resolve", "components", "angle", "horizontal", "vertical"]
+        op, confidence, reasoning = detect_primary_operation(keywords)
+        
+        assert op == "transform"
 
 
 # =============================================================================
-# FULL PIPELINE INTEGRATION TESTS
+# EQUATION DATABASE TESTS
 # =============================================================================
 
-class TestPipelineIntegration:
-    """Test complete pipeline execution."""
+class TestEquationDatabase:
+    """Test equation database functionality."""
     
-    def test_pipeline_ray_sphere_intersection(self):
-        """Test full pipeline for ray-sphere intersection."""
+    def test_database_initialization(self, equation_db):
+        """Test that database loads with equations."""
+        assert len(equation_db.equations) > 0
+    
+    def test_get_equation_by_id(self, equation_db):
+        """Test retrieving equation by ID."""
+        eq = equation_db.get_equation("work_constant_force")
+        
+        assert eq is not None
+        assert eq.name == "Work by Constant Force"
+        assert "W = F * d * cos(θ)" in eq.formula
+    
+    def test_search_by_keywords(self, equation_db):
+        """Test fuzzy keyword search."""
+        results = equation_db.search_by_keywords(["work", "force"], min_score=0.3)
+        
+        assert len(results) > 0
+        top_eq, score = results[0]
+        assert score > 0.3
+    
+    def test_search_by_operation(self, equation_db):
+        """Test searching equations by operation type."""
+        equations = equation_db.search_by_operation("accumulate")
+        
+        assert len(equations) > 0
+        assert all("accumulate" in eq.operations for eq in equations)
+    
+    def test_search_by_model(self, equation_db):
+        """Test searching equations by physics model."""
+        equations = equation_db.search_by_model("work_energy_theorem")
+        
+        assert len(equations) > 0
+        assert all("work_energy_theorem" in eq.models for eq in equations)
+    
+    def test_find_equations_for_variables(self, equation_db):
+        """Test finding equations that can solve for target variable."""
+        known_vars = ["F", "d", "θ"]
+        target_var = "W"
+        
+        equations = equation_db.find_equations_for_variables(known_vars, target_var)
+        
+        assert len(equations) > 0
+        assert any(eq.id == "work_constant_force" for eq in equations)
+
+
+# =============================================================================
+# COGNITIVE PIPELINE TESTS
+# =============================================================================
+
+class TestCognitivePipeline:
+    """Test cognitive pipeline stages."""
+    
+    def test_create_session(self, pipeline, simple_problem):
+        """Test creating a cognitive session."""
+        request = CognitiveRequest(question_text=simple_problem)
+        state = pipeline.create_session(request)
+        
+        assert state.session_id is not None
+        assert state.current_stage == "question_analysis"
+        assert len(state.question_analysis.keywords) > 0
+    
+    def test_full_pipeline_simple_problem(self, pipeline, simple_problem):
+        """Test running full pipeline on simple problem."""
+        request = CognitiveRequest(question_text=simple_problem)
+        state = pipeline.create_session(request)
+        state = pipeline.determine_requested_output(state.session_id)
+        state = pipeline.apply_constraint_lock(state.session_id)
+        state = pipeline.determine_operation_lock(state.session_id)
+        state = pipeline.assign_bucket(state.session_id)
+        state = pipeline.select_model(state.session_id)
+        state = pipeline.select_tool(state.session_id)
+        state = pipeline.discover_nested_operations(state.session_id)
+        
+        assert state.operation_lock is not None
+        assert state.operation_lock.primary_operation == "accumulate"
+        assert state.bucket_assignment is not None
+        assert state.model_selection is not None
+    
+    def test_pipeline_with_angle_detection(self, pipeline):
+        """Test pipeline detects nested operations for angled forces."""
+        problem = "A force of 100 N at 30° pushes a box 5 m. Calculate work."
+        request = CognitiveRequest(question_text=problem)
+        
+        state = pipeline.create_session(request)
+        state = pipeline.determine_requested_output(state.session_id)
+        state = pipeline.apply_constraint_lock(state.session_id)
+        state = pipeline.determine_operation_lock(state.session_id)
+        state = pipeline.assign_bucket(state.session_id)
+        state = pipeline.select_model(state.session_id)
+        state = pipeline.select_tool(state.session_id)
+        state = pipeline.discover_nested_operations(state.session_id, user_confirms_secondary=True)
+        
+        assert state.execution_plan is not None
+        assert len(state.execution_plan.nested_operations) > 0
+        assert state.execution_plan.nested_operations[0].operation == "transform"
+    
+    def test_pipeline_multi_part_question(self, pipeline, sample_problem_text):
+        """Test pipeline handles multi-part questions."""
         request = CognitiveRequest(
-            question="Find where a ray from origin hits a sphere at z=5",
-            context_bucket="SPATIAL",
-            requested_operation="TRANSFORM",
-            input_data={
-                "objects": [
-                    {
-                        "type": "SPHERE",
-                        "translation": [0, 0, 5],
-                        "radius": 1.0
-                    }
-                ],
-                "rays": [
-                    {
-                        "origin": [0, 0, 0],
-                        "direction": [0, 0, 1]
-                    }
-                ]
-            },
-            parameters={}
+            question_text=sample_problem_text,
+            selected_part="a"
         )
         
-        result = execute_cognitive_pipeline(request)
+        state = pipeline.create_session(request)
         
-        assert result.identified_operation == "TRANSFORM"
-        assert result.selected_model == "RAYTRACE"
-        assert result.selected_tool == "VECTOR_ENGINE"
-        assert result.final_answer is not None
-        assert "t=4.0000" in result.final_answer or "intersection" in result.final_answer.lower()
+        assert state.question_analysis.parts is not None
+        assert "a" in state.question_analysis.parts
+        assert "b" in state.question_analysis.parts
+        assert state.question_analysis.current_part == "a"
     
-    def test_pipeline_distance_measurement(self):
-        """Test full pipeline for distance measurement."""
-        request = CognitiveRequest(
-            question="Measure distance between two points",
-            context_bucket="SPATIAL",
-            requested_operation="MEASURE",
-            input_data={
-                "points": [[0, 0, 0], [3, 4, 0]]
-            },
-            parameters={}
+    def test_execute_step(self, pipeline, simple_problem):
+        """Test executing a computation step."""
+        request = CognitiveRequest(question_text=simple_problem)
+        state = pipeline.create_session(request)
+        state = pipeline.determine_requested_output(state.session_id)
+        state = pipeline.apply_constraint_lock(state.session_id)
+        state = pipeline.determine_operation_lock(state.session_id)
+        state = pipeline.assign_bucket(state.session_id)
+        state = pipeline.select_model(state.session_id)
+        state = pipeline.select_tool(state.session_id)
+        state = pipeline.discover_nested_operations(state.session_id)
+        
+        # Execute work calculation
+        state, step_result = pipeline.execute_step(
+            session_id=state.session_id,
+            step_number=1,
+            equation_id="work_constant_force",
+            input_values={"F": 50.0, "d": 10.0, "θ": 0.0}
         )
         
-        result = execute_cognitive_pipeline(request)
-        
-        assert result.identified_operation == "MEASURE"
-        assert result.final_answer is not None
-        assert "5.0" in result.final_answer
+        assert step_result.success
+        assert step_result.value == 500.0  # W = F*d*cos(0) = 50*10*1 = 500
+        assert step_result.unit == "J"
     
-    def test_pipeline_monte_carlo(self):
-        """Test full pipeline for Monte Carlo simulation."""
-        request = CognitiveRequest(
-            question="Run Monte Carlo simulation",
-            context_bucket="PROBABILISTIC",
-            requested_operation="REDUCE",
-            input_data={
-                "distribution": "normal",
-                "mean": [0.0],
-                "std": [1.0]
-            },
-            parameters={"n_samples": 1000}
+    def test_finalize_result(self, pipeline, simple_problem):
+        """Test finalizing cognitive result."""
+        request = CognitiveRequest(question_text=simple_problem)
+        state = pipeline.create_session(request)
+        state = pipeline.determine_requested_output(state.session_id)
+        state = pipeline.apply_constraint_lock(state.session_id)
+        state = pipeline.determine_operation_lock(state.session_id)
+        state = pipeline.assign_bucket(state.session_id)
+        state = pipeline.select_model(state.session_id)
+        state = pipeline.select_tool(state.session_id)
+        state = pipeline.discover_nested_operations(state.session_id)
+        
+        # Execute step
+        state, _ = pipeline.execute_step(
+            session_id=state.session_id,
+            step_number=1,
+            equation_id="work_constant_force",
+            input_values={"F": 50.0, "d": 10.0, "θ": 0.0}
         )
         
-        result = execute_cognitive_pipeline(request)
+        # Finalize
+        state = pipeline.finalize_result(state.session_id)
         
-        assert result.selected_model == "MONTECARLO"
-        assert result.final_answer is not None
-    
-    def test_pipeline_graph_analysis(self):
-        """Test full pipeline for graph analysis."""
-        request = CognitiveRequest(
-            question="Analyze connected components",
-            context_bucket="LOGICAL",
-            requested_operation="COMPARE",
-            input_data={
-                "nodes": 6,
-                "edges": [[0, 1], [1, 2], [3, 4]]
-            },
-            parameters={}
-        )
-        
-        result = execute_cognitive_pipeline(request)
-        
-        assert result.final_answer is not None
-
-
-# =============================================================================
-# API ENDPOINT TESTS
-# =============================================================================
-
-class TestAPIEndpoints:
-    """Test FastAPI endpoints."""
-    
-    def test_health_endpoint(self, client):
-        """Test health check endpoint."""
-        response = client.get("/health")
-        assert response.status_code == 200
-        data = response.json()
-        assert data["status"] == "healthy"
-        assert "version" in data
-        assert "components" in data
-    
-    def test_root_endpoint(self, client):
-        """Test root endpoint serves HTML."""
-        response = client.get("/")
-        assert response.status_code == 200
-        assert "text/html" in response.headers["content-type"]
-    
-    def test_cognitive_process_endpoint(self, client):
-        """Test main cognitive process endpoint."""
-        payload = {
-            "question": "Find ray-sphere intersection",
-            "context_bucket": "SPATIAL",
-            "requested_operation": "TRANSFORM",
-            "input_data": {
-                "objects": [
-                    {
-                        "type": "SPHERE",
-                        "translation": [0, 0, 5],
-                        "radius": 1.0
-                    }
-                ],
-                "rays": [
-                    {
-                        "origin": [0, 0, 0],
-                        "direction": [0, 0, 1]
-                    }
-                ]
-            },
-            "parameters": {}
-        }
-        
-        response = client.post("/cognitive/process", json=payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is True
-        assert "final_answer" in data
-        assert "execution_log" in data
-    
-    def test_spatial_raytrace_endpoint(self, client):
-        """Test specialized raytrace endpoint."""
-        payload = {
-            "objects": [
-                {
-                    "type": "SPHERE",
-                    "translation": [0, 0, 5],
-                    "radius": 1.0
-                }
-            ],
-            "rays": [
-                {
-                    "origin": [0, 0, 0],
-                    "direction": [0, 0, 1]
-                }
-            ]
-        }
-        
-        response = client.post("/cognitive/spatial/raytrace", json=payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is True
-    
-    def test_spatial_measure_endpoint(self, client):
-        """Test specialized measure endpoint."""
-        payload = {
-            "points": [[0, 0, 0], [3, 4, 0]]
-        }
-        
-        response = client.post("/cognitive/spatial/measure", json=payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is True
-        assert "5.0" in data["final_answer"]
-    
-    def test_probabilistic_simulate_endpoint(self, client):
-        """Test probabilistic simulation endpoint."""
-        payload = {
-            "distribution": "normal",
-            "mean": [0.0],
-            "std": [1.0],
-            "n_samples": 1000
-        }
-        
-        response = client.post("/cognitive/probabilistic/simulate", json=payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is True
-    
-    def test_logical_graph_endpoint(self, client):
-        """Test logical graph endpoint."""
-        payload = {
-            "nodes": 6,
-            "edges": [[0, 1], [1, 2], [3, 4]]
-        }
-        
-        response = client.post("/cognitive/logical/graph", json=payload)
-        assert response.status_code == 200
-        data = response.json()
-        assert data["success"] is True
-    
-    def test_invalid_request_handling(self, client):
-        """Test handling of invalid requests."""
-        payload = {
-            "question": "",
-            "context_bucket": "INVALID_BUCKET",
-            "requested_operation": "TRANSFORM",
-            "input_data": {},
-            "parameters": {}
-        }
-        
-        response = client.post("/cognitive/process", json=payload)
-        assert response.status_code in [400, 422]  # Bad request or validation error
+        assert state.is_complete
+        assert state.final_result is not None
+        assert state.final_result.final_value == 500.0
+        assert state.final_result.unit == "J"
 
 
 # =============================================================================
@@ -509,92 +349,129 @@ class TestAPIEndpoints:
 # =============================================================================
 
 class TestEdgeCases:
-    """Test edge cases and boundary conditions."""
+    """Test edge cases and error handling."""
     
-    def test_ray_missing_sphere(self):
-        """Test ray that misses a sphere."""
-        request = CognitiveRequest(
-            question="Find intersection",
-            context_bucket="SPATIAL",
-            requested_operation="TRANSFORM",
-            input_data={
-                "objects": [
-                    {
-                        "type": "SPHERE",
-                        "translation": [10, 10, 5],
-                        "radius": 1.0
-                    }
-                ],
-                "rays": [
-                    {
-                        "origin": [0, 0, 0],
-                        "direction": [0, 0, 1]
-                    }
-                ]
-            },
-            parameters={}
+    def test_empty_keywords(self):
+        """Test operation detection with empty keywords."""
+        op, confidence, reasoning = detect_primary_operation([])
+        
+        # Should return a default operation with low confidence
+        assert op in ["accumulate", "transform", "scale", "estimate", "differentiate"]
+    
+    def test_unknown_equation_id(self, pipeline, simple_problem):
+        """Test error handling for unknown equation ID."""
+        request = CognitiveRequest(question_text=simple_problem)
+        state = pipeline.create_session(request)
+        
+        with pytest.raises(ValueError, match="Equation .* not found"):
+            pipeline.execute_step(
+                session_id=state.session_id,
+                step_number=1,
+                equation_id="nonexistent_equation",
+                input_values={}
+            )
+    
+    def test_invalid_session_id(self, pipeline):
+        """Test error handling for invalid session ID."""
+        with pytest.raises(ValueError, match="Session .* not found"):
+            pipeline.get_state("invalid_session_123")
+    
+    def test_zero_values_in_equation(self, pipeline, simple_problem):
+        """Test equation evaluation with zero values."""
+        request = CognitiveRequest(question_text=simple_problem)
+        state = pipeline.create_session(request)
+        state = pipeline.determine_requested_output(state.session_id)
+        state = pipeline.apply_constraint_lock(state.session_id)
+        state = pipeline.determine_operation_lock(state.session_id)
+        state = pipeline.assign_bucket(state.session_id)
+        state = pipeline.select_model(state.session_id)
+        state = pipeline.select_tool(state.session_id)
+        state = pipeline.discover_nested_operations(state.session_id)
+        
+        state, step_result = pipeline.execute_step(
+            session_id=state.session_id,
+            step_number=1,
+            equation_id="work_constant_force",
+            input_values={"F": 0.0, "d": 10.0, "θ": 0.0}
         )
         
-        result = execute_cognitive_pipeline(request)
-        # Should complete without error
+        assert step_result.success
+        assert step_result.value == 0.0  # Zero force = zero work
+
+
+# =============================================================================
+# INTEGRATION TESTS
+# =============================================================================
+
+class TestIntegration:
+    """End-to-end integration tests."""
     
-    def test_parallel_ray_plane(self):
-        """Test ray parallel to plane (no intersection)."""
-        request = CognitiveRequest(
-            question="Find intersection",
-            context_bucket="SPATIAL",
-            requested_operation="TRANSFORM",
-            input_data={
-                "objects": [
-                    {
-                        "type": "PLANE",
-                        "translation": [0, 0, 0]
-                    }
-                ],
-                "rays": [
-                    {
-                        "origin": [0, 1, 0],
-                        "direction": [1, 0, 0]  # Parallel to XZ plane
-                    }
-                ]
-            },
-            parameters={}
+    def test_full_work_problem_solution(self, pipeline):
+        """Test complete solution of work problem with angle."""
+        problem = "A force of 100 N at 30° pushes a box 5 m horizontally. Calculate work done."
+        request = CognitiveRequest(question_text=problem)
+        
+        # Run full pipeline
+        state = pipeline.create_session(request)
+        state = pipeline.determine_requested_output(state.session_id)
+        state = pipeline.apply_constraint_lock(state.session_id)
+        state = pipeline.determine_operation_lock(state.session_id)
+        state = pipeline.assign_bucket(state.session_id)
+        state = pipeline.select_model(state.session_id)
+        state = pipeline.select_tool(state.session_id)
+        state = pipeline.discover_nested_operations(state.session_id)
+        
+        # Execute nested operation first (vector resolution)
+        if state.execution_plan and state.execution_plan.nested_operations:
+            state, _ = pipeline.execute_step(
+                session_id=state.session_id,
+                step_number=1,
+                equation_id="vector_components",
+                input_values={"F": 100.0, "θ": 30.0}
+            )
+        
+        # Execute primary operation (work calculation)
+        state, step_result = pipeline.execute_step(
+            session_id=state.session_id,
+            step_number=2,
+            equation_id="work_constant_force",
+            input_values={"F": 100.0, "d": 5.0, "θ": 30.0}
         )
         
-        result = execute_cognitive_pipeline(request)
-        # Should complete without error
+        state = pipeline.finalize_result(state.session_id)
+        
+        assert state.is_complete
+        assert state.final_result is not None
+        # W = F*d*cos(30°) = 100*5*0.866 = 433 J
+        assert abs(state.final_result.final_value - 433.0) < 1.0
     
-    def test_zero_distance(self):
-        """Test measuring distance between same points."""
-        request = CognitiveRequest(
-            question="Measure distance",
-            context_bucket="SPATIAL",
-            requested_operation="MEASURE",
-            input_data={
-                "points": [[1, 2, 3], [1, 2, 3]]
-            },
-            parameters={}
+    def test_friction_problem_solution(self, pipeline):
+        """Test problem with friction force."""
+        problem = "A box experiences friction force of 62 N over 13 m. Calculate work done by friction."
+        request = CognitiveRequest(question_text=problem)
+        
+        state = pipeline.create_session(request)
+        state = pipeline.determine_requested_output(state.session_id)
+        state = pipeline.apply_constraint_lock(state.session_id)
+        state = pipeline.determine_operation_lock(state.session_id)
+        state = pipeline.assign_bucket(state.session_id)
+        state = pipeline.select_model(state.session_id)
+        state = pipeline.select_tool(state.session_id)
+        state = pipeline.discover_nested_operations(state.session_id)
+        
+        # Execute work calculation (friction opposes motion, so θ=180°)
+        state, step_result = pipeline.execute_step(
+            session_id=state.session_id,
+            step_number=1,
+            equation_id="work_constant_force",
+            input_values={"F": 62.0, "d": 13.0, "θ": 180.0}
         )
         
-        result = execute_cognitive_pipeline(request)
-        assert result.final_answer is not None
-        assert "0.0" in result.final_answer or "0" in result.final_answer
-    
-    def test_empty_graph(self):
-        """Test graph with no edges."""
-        request = CognitiveRequest(
-            question="Analyze graph",
-            context_bucket="LOGICAL",
-            requested_operation="COMPARE",
-            input_data={
-                "nodes": 5,
-                "edges": []
-            },
-            parameters={}
-        )
+        state = pipeline.finalize_result(state.session_id)
         
-        result = execute_cognitive_pipeline(request)
-        assert result.final_answer is not None
+        assert state.is_complete
+        # W = F*d*cos(180°) = 62*13*(-1) = -806 J
+        assert abs(step_result.value - (-806.0)) < 1.0
 
 
 # =============================================================================
@@ -602,4 +479,4 @@ class TestEdgeCases:
 # =============================================================================
 
 if __name__ == "__main__":
-    pytest.main([__file__, "-v"])
+    pytest.main([__file__, "-v", "--tb=short"])

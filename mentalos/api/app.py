@@ -1,96 +1,92 @@
 """
-MentalOS FastAPI Shell Layer
-Production-ready API boundary following industry standards.
-"""
+MentalOS FastAPI Application
 
-from fastapi import FastAPI, HTTPException, status
+Secure, production-ready API with Pydantic V2 patterns.
+Binds to 127.0.0.1 only for local security.
+"""
+from __future__ import annotations
+import uvicorn
+from fastapi import FastAPI, HTTPException, Body
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
-from pydantic import BaseModel, Field, ConfigDict
-from typing import Optional, Any, Union
-import numpy as np
+from fastapi.responses import HTMLResponse, FileResponse
+from pydantic import BaseModel, ConfigDict, Field
+from typing import Optional, Dict, Any, List
 import os
 
-from mentalos.core.pipeline import execute_cognitive_pipeline
+from mentalos.core.pipeline import CognitivePipeline
 from mentalos.types import (
-    CognitiveRequest, CognitiveState, OperationName, BucketName
+    CognitiveRequest, CognitiveState, CognitiveResult, 
+    StepResult, UserPrompt, PrimaryOperation
 )
 
+
 # =============================================================================
-# PYDANTIC MODELS FOR API REQUEST/RESPONSE
+# PYDANTIC V2 MODELS
 # =============================================================================
 
 class CognitiveRequestModel(BaseModel):
-    """API request model for cognitive pipeline."""
-    question: str = Field(..., description="The question to process")
-    context_bucket: BucketName = Field(..., description="Context bucket category")
-    requested_operation: OperationName = Field(..., description="Requested operation type")
-    input_data: dict = Field(default_factory=dict, description="Input data for processing")
-    parameters: Optional[dict] = Field(default=None, description="Optional parameters")
-    
+    """Pydantic V2 model for cognitive requests."""
     model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "question": "Find where a ray from origin hits a sphere",
-                "context_bucket": "SPATIAL",
-                "requested_operation": "TRANSFORM",
-                "input_data": {
-                    "objects": [
-                        {
-                            "type": "SPHERE",
-                            "translation": [0, 0, 5],
-                            "radius": 1.0
-                        }
-                    ],
-                    "rays": [
-                        {
-                            "origin": [0, 0, 0],
-                            "direction": [0, 0, 1]
-                        }
-                    ]
-                },
-                "parameters": {}
-            }
-        }
+        arbitrary_types_allowed=False,
+        json_schema_extra={"example": {"question_text": "A man pushes a 45 kg box..."}}
     )
+    
+    question_text: str = Field(..., description="The physics/math problem text")
+    question_parts: Optional[Dict[str, str]] = Field(None, description="Multi-part questions {a: text, b: text}")
+    selected_part: Optional[str] = Field(None, description="Which part to solve (a, b, c, d)")
+    user_context: Optional[Dict[str, Any]] = Field(None, description="Additional user context")
 
 
 class CognitiveResponseModel(BaseModel):
-    """API response model for cognitive pipeline results."""
-    success: bool
-    identified_operation: OperationName
-    selected_model: str
-    selected_tool: str
-    final_answer: str
-    execution_log: list[str]
-    intermediate_results: dict
-    
+    """Pydantic V2 model for cognitive responses."""
     model_config = ConfigDict(
-        json_schema_extra={
-            "example": {
-                "success": True,
-                "identified_operation": "TRANSFORM",
-                "selected_model": "RAYTRACE",
-                "selected_tool": "VECTOR_ENGINE",
-                "final_answer": "Found 1 ray intersection(s). Closest hit at t=4.0000 on object 0",
-                "execution_log": [
-                    "Identified operation: TRANSFORM",
-                    "Selected model: RAYTRACE",
-                    "Selected tool: VECTOR_ENGINE",
-                    "Execution completed successfully",
-                    "Answer formatted"
-                ],
-                "intermediate_results": {"scene_objects": 1}
-            }
-        }
+        arbitrary_types_allowed=False,
+        json_schema_extra={"example": {
+            "session_id": "abc12345",
+            "stage": "complete",
+            "requires_user_input": False
+        }}
     )
+    
+    session_id: str
+    stage: str
+    requires_user_input: bool
+    user_prompt: Optional[Dict[str, Any]] = None
+    partial_result: Optional[Dict[str, Any]] = None
+    final_result: Optional[Dict[str, Any]] = None
+    state_summary: Dict[str, Any] = Field(default_factory=dict)
 
 
-class HealthResponseModel(BaseModel):
-    """Health check response model."""
+class HealthResponse(BaseModel):
+    """Health check response."""
+    model_config = ConfigDict(json_schema_extra={"example": {"status": "healthy", "version": "1.0.0"}})
+    
     status: str
     version: str
-    components: dict
+    pipeline_ready: bool
+    equations_loaded: int
+
+
+class EquationSearchRequest(BaseModel):
+    """Equation search request."""
+    model_config = ConfigDict(json_schema_extra={"example": {"keywords": ["work", "force"]}})
+    
+    keywords: List[str]
+    min_score: float = Field(default=0.3, ge=0.0, le=1.0)
+    limit: int = Field(default=10, ge=1, le=50)
+
+
+class ExecuteStepRequest(BaseModel):
+    """Execute computation step request."""
+    model_config = ConfigDict(json_schema_extra={"example": {
+        "step_number": 1,
+        "equation_id": "work_constant_force",
+        "input_values": {"F": 87.0, "d": 13.0, "θ": 33.0}
+    }})
+    
+    step_number: int = Field(..., ge=1)
+    equation_id: str
+    input_values: Dict[str, float]
 
 
 # =============================================================================
@@ -98,278 +94,357 @@ class HealthResponseModel(BaseModel):
 # =============================================================================
 
 app = FastAPI(
-    title="MentalOS Cognitive Engine API",
-    description="Deterministic FCIS (Functional Cognitive Inference System) API for Physics/Spatial inference",
+    title="MentalOS Cognitive Engine",
+    description="Deterministic Physics/Spatial Inference Engine with DAG-based Operation Resolution",
     version="1.0.0",
     docs_url="/docs",
     redoc_url="/redoc"
 )
 
-# Mount static files for web UI
-static_path = os.path.join(os.path.dirname(__file__), "..", "static")
-if os.path.exists(static_path):
-    app.mount("/static", StaticFiles(directory=static_path), name="static")
+# Initialize pipeline
+pipeline = CognitivePipeline()
 
 
-@app.get("/", response_class=FileResponse, tags=["System"])
-async def root():
-    """Serve the main web UI."""
-    index_path = os.path.join(static_path, "index.html")
+# =============================================================================
+# STATIC FILES & WEB UI
+# =============================================================================
+
+# Create static directory if not exists
+static_dir = os.path.join(os.path.dirname(__file__), "..", "static")
+os.makedirs(static_dir, exist_ok=True)
+
+# Mount static files
+app.mount("/static", StaticFiles(directory=static_dir), name="static")
+
+
+@app.get("/", response_class=HTMLResponse, tags=["Web UI"])
+async def serve_web_ui():
+    """Serve the main web interface."""
+    index_path = os.path.join(static_dir, "index.html")
     if os.path.exists(index_path):
-        return index_path
-    raise HTTPException(status_code=404, detail="Web UI not found")
+        return FileResponse(index_path)
+    
+    # Fallback minimal UI if index.html doesn't exist
+    return """
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <title>MentalOS - Cognitive Physics Engine</title>
+        <style>
+            body { font-family: 'Segoe UI', sans-serif; background: #0f172a; color: #e2e8f0; margin: 0; padding: 20px; }
+            .container { max-width: 1200px; margin: 0 auto; }
+            h1 { color: #38bdf8; }
+            .card { background: #1e293b; border-radius: 8px; padding: 20px; margin: 20px 0; }
+            button { background: #38bdf8; color: #0f172a; border: none; padding: 10px 20px; border-radius: 6px; cursor: pointer; font-weight: bold; }
+            button:hover { background: #7dd3fc; }
+            textarea { width: 100%; min-height: 150px; background: #0f172a; color: #e2e8f0; border: 1px solid #334155; border-radius: 6px; padding: 10px; }
+            .result { background: #064e3b; padding: 15px; border-radius: 6px; margin-top: 20px; }
+            .error { background: #7f1d1d; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <h1>🧠 MentalOS v1.0.0</h1>
+            <p>Deterministic Physics/Spatial Inference Engine</p>
+            
+            <div class="card">
+                <h2>Solve Physics Problem</h2>
+                <textarea id="question" placeholder="Enter your physics problem here...&#10;&#10;Example: A man pushes a 45 kg box from rest along a horizontal floor by exerting a force of 87 N downward at 33° to the horizontal against a friction force of 62 N over a distance of 13 m.&#10;a) How much work was done in moving the box?"></textarea>
+                <br><br>
+                <button onclick="solveProblem()">Analyze Problem</button>
+            </div>
+            
+            <div id="result" class="card" style="display:none;"></div>
+        </div>
+        
+        <script>
+            async function solveProblem() {
+                const question = document.getElementById('question').value;
+                const resultDiv = document.getElementById('result');
+                
+                try {
+                    const response = await fetch('/cognitive/process', {
+                        method: 'POST',
+                        headers: {'Content-Type': 'application/json'},
+                        body: JSON.stringify({question_text: question})
+                    });
+                    
+                    const data = await response.json();
+                    resultDiv.style.display = 'block';
+                    resultDiv.className = 'card result';
+                    resultDiv.innerHTML = '<h3>Analysis Result</h3><pre>' + JSON.stringify(data, null, 2) + '</pre>';
+                } catch (error) {
+                    resultDiv.style.display = 'block';
+                    resultDiv.className = 'card error';
+                    resultDiv.innerHTML = '<h3>Error</h3><p>' + error.message + '</p>';
+                }
+            }
+        </script>
+    </body>
+    </html>
+    """
 
 
-@app.get("/health", response_model=HealthResponseModel, tags=["System"])
+# =============================================================================
+# API ENDPOINTS
+# =============================================================================
+
+@app.get("/health", response_model=HealthResponse, tags=["System"])
 async def health_check():
-    """
-    Health check endpoint to verify system status.
-    """
-    return HealthResponseModel(
+    """Check system health and readiness."""
+    eq_count = len(pipeline.equation_db.equations)
+    return HealthResponse(
         status="healthy",
         version="1.0.0",
-        components={
-            "pipeline": "operational",
-            "spatial_engine": "operational",
-            "monte_carlo": "operational",
-            "graph_engine": "operational"
-        }
+        pipeline_ready=True,
+        equations_loaded=eq_count
     )
 
 
-@app.post(
-    "/cognitive/process",
-    response_model=CognitiveResponseModel,
-    responses={
-        200: {"description": "Successful processing"},
-        400: {"description": "Invalid request"},
-        500: {"description": "Processing error"}
-    },
-    tags=["Cognitive Pipeline"]
-)
+@app.post("/cognitive/process", response_model=CognitiveResponseModel, tags=["Cognitive Pipeline"])
 async def process_cognitive_request(request: CognitiveRequestModel):
     """
-    Process a cognitive request through the deterministic FCIS pipeline.
+    Process a physics/math problem through the cognitive pipeline.
     
-    This endpoint executes the full pipeline:
-    Question → Requested Output → Primary Operation → Bucket → Model → Tool → Execution → Answer
-    
-    - **question**: Natural language question describing the task
-    - **context_bucket**: The cognitive domain (SPATIAL, TEMPORAL, LOGICAL, etc.)
-    - **requested_operation**: The operation type (IDENTIFY, TRANSFORM, MEASURE, etc.)
-    - **input_data**: Structured data for the operation
-    - **parameters**: Optional configuration parameters
+    This endpoint initiates the full pipeline:
+    1. Question Analysis
+    2. Requested Output Determination
+    3. Constraint Lock
+    4. Operation Lock (Winner Takes All)
+    5. Bucket Assignment
+    6. Model Selection
+    7. Tool Selection
+    8. Nested Operation Discovery
     """
     try:
-        # Convert Pydantic model to internal CognitiveRequest
+        # Convert Pydantic model to internal type
         cognitive_request = CognitiveRequest(
-            question=request.question,
-            context_bucket=request.context_bucket,
-            requested_operation=request.requested_operation,
-            input_data=request.input_data,
-            parameters=request.parameters or {}
+            question_text=request.question_text,
+            question_parts=request.question_parts,
+            selected_part=request.selected_part,
+            user_context=request.user_context
         )
         
-        # Execute the deterministic pipeline
-        result: CognitiveState = execute_cognitive_pipeline(cognitive_request)
+        # Create session and run pipeline stages
+        state = pipeline.create_session(cognitive_request)
+        state = pipeline.determine_requested_output(state.session_id)
+        state = pipeline.apply_constraint_lock(state.session_id)
+        state = pipeline.determine_operation_lock(state.session_id)
+        state = pipeline.assign_bucket(state.session_id)
+        state = pipeline.select_model(state.session_id)
+        state = pipeline.select_tool(state.session_id)
+        state = pipeline.discover_nested_operations(state.session_id, user_confirms_secondary=True)
         
-        # Check for errors in the result
-        if result.final_answer is None or result.final_answer.startswith("Error:") or result.final_answer.startswith("Execution failed:"):
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=result.final_answer or "Unknown error"
-            )
+        # Check if nested operations exist
+        requires_input = False
+        user_prompt = None
+        
+        if state.execution_plan and state.execution_plan.nested_operations:
+            requires_input = True
+            user_prompt = {
+                "prompt_type": "identify_secondary_operations",
+                "message": f"Detected {len(state.execution_plan.nested_operations)} secondary operations needed before primary operation.",
+                "options": ["Proceed with nested operations", "Skip secondary operations"],
+                "nested_operations": [
+                    {
+                        "order": op.order,
+                        "operation": op.operation,
+                        "bucket": op.bucket,
+                        "model": op.model,
+                        "tool": op.tool,
+                        "target_variable": op.target_variable
+                    }
+                    for op in state.execution_plan.nested_operations
+                ]
+            }
         
         # Build response
+        state_summary = {
+            "current_stage": state.current_stage,
+            "primary_operation": state.operation_lock.primary_operation if state.operation_lock else None,
+            "bucket": state.bucket_assignment.primary_bucket if state.bucket_assignment else None,
+            "model": state.model_selection.primary_model if state.model_selection else None,
+            "tool": state.tool_selection.primary_tool if state.tool_selection else None,
+            "has_nested_operations": len(state.execution_plan.nested_operations) > 0 if state.execution_plan else False,
+            "is_complete": state.is_complete
+        }
+        
         return CognitiveResponseModel(
-            success=True,
-            identified_operation=result.identified_operation,
-            selected_model=result.selected_model,
-            selected_tool=result.selected_tool,
-            final_answer=result.final_answer,
-            execution_log=list(result.execution_log),
-            intermediate_results=result.intermediate_results
+            session_id=state.session_id,
+            stage=state.current_stage,
+            requires_user_input=requires_input,
+            user_prompt=user_prompt,
+            partial_result=None,
+            final_result=None,
+            state_summary=state_summary
         )
-    
-    except HTTPException:
-        raise
+        
     except Exception as e:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Pipeline execution failed: {str(e)}"
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/cognitive/execute-step", response_model=CognitiveResponseModel, tags=["Cognitive Pipeline"])
+async def execute_computation_step(
+    session_id: str = Body(..., embed=True),
+    step_number: int = Body(..., embed=True),
+    equation_id: str = Body(..., embed=True),
+    input_values: Dict[str, float] = Body(..., embed=True)
+):
+    """Execute a single computation step in the pipeline."""
+    try:
+        state, step_result = pipeline.execute_step(
+            session_id=session_id,
+            step_number=step_number,
+            equation_id=equation_id,
+            input_values=input_values
         )
-
-
-@app.post(
-    "/cognitive/spatial/raytrace",
-    response_model=CognitiveResponseModel,
-    tags=["Spatial Operations"]
-)
-async def spatial_raytrace(
-    request_data: dict,
-    question: Optional[str] = None
-):
-    """
-    Specialized endpoint for raytracing operations.
-    
-    Performs ray-scene intersection tests using vectorized computation.
-    
-    Request body should contain:
-    - objects: List of scene objects
-    - rays: List of rays to trace
-    """
-    objects = request_data.get("objects", [])
-    rays = request_data.get("rays", [])
-    
-    req = CognitiveRequestModel(
-        question=question or "Perform raytracing",
-        context_bucket="SPATIAL",
-        requested_operation="TRANSFORM",
-        input_data={
-            "objects": objects,
-            "rays": rays
+        
+        # Check if all steps complete
+        if state.execution_plan and len(state.step_results) >= len(state.execution_plan.nested_operations):
+            # Execute final step (primary operation)
+            state = pipeline.finalize_result(session_id)
+        
+        state_summary = {
+            "current_stage": state.current_stage,
+            "steps_completed": len(state.step_results),
+            "last_result": {
+                "variable": step_result.variable_name,
+                "value": step_result.value,
+                "unit": step_result.unit,
+                "formula": step_result.formula_used
+            } if step_result else None,
+            "is_complete": state.is_complete
         }
+        
+        return CognitiveResponseModel(
+            session_id=session_id,
+            stage=state.current_stage,
+            requires_user_input=not state.is_complete,
+            user_prompt=None,
+            partial_result={
+                "step_number": step_result.step_number,
+                "operation": step_result.operation,
+                "variable_name": step_result.variable_name,
+                "value": step_result.value,
+                "unit": step_result.unit,
+                "formula_used": step_result.formula_used,
+                "success": step_result.success
+            } if step_result else None,
+            final_result={
+                "question_part": state.final_result.question_part,
+                "final_value": state.final_result.final_value,
+                "unit": state.final_result.unit,
+                "significant_figures": state.final_result.significant_figures
+            } if state.final_result else None,
+            state_summary=state_summary
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/cognitive/equations/search", tags=["Equations"])
+async def search_equations(request: EquationSearchRequest):
+    """Search equations by keywords with fuzzy matching."""
+    results = pipeline.equation_db.search_by_keywords(
+        keywords=request.keywords,
+        min_score=request.min_score,
+        limit=request.limit
     )
     
-    return await process_cognitive_request(req)
-
-
-@app.post(
-    "/cognitive/spatial/measure",
-    response_model=CognitiveResponseModel,
-    tags=["Spatial Operations"]
-)
-async def spatial_measure(
-    request_data: dict,
-    question: Optional[str] = None
-):
-    """
-    Specialized endpoint for spatial measurements.
-    
-    Computes distances between points in 3D space.
-    
-    Request body should contain:
-    - points: List of points to measure between
-    """
-    points = request_data.get("points", [])
-    
-    req = CognitiveRequestModel(
-        question=question or "Measure distance",
-        context_bucket="SPATIAL",
-        requested_operation="MEASURE",
-        input_data={
-            "points": points
-        }
-    )
-    
-    return await process_cognitive_request(req)
-
-
-@app.post(
-    "/cognitive/probabilistic/simulate",
-    response_model=CognitiveResponseModel,
-    tags=["Probabilistic Operations"]
-)
-async def probabilistic_simulation(
-    request_data: dict,
-    question: Optional[str] = None
-):
-    """
-    Specialized endpoint for Monte Carlo simulations.
-    
-    Performs statistical analysis using vectorized random sampling.
-    
-    Request body should contain:
-    - distribution: Distribution type (normal, uniform)
-    - mean: Mean values
-    - std: Standard deviation values
-    - n_samples: Number of samples (default: 10000)
-    """
-    distribution = request_data.get("distribution", "normal")
-    mean = request_data.get("mean", [0.0])
-    std = request_data.get("std", [1.0])
-    n_samples = request_data.get("n_samples", 10000)
-    
-    req = CognitiveRequestModel(
-        question=question or "Run Monte Carlo simulation",
-        context_bucket="PROBABILISTIC",
-        requested_operation="MAP",
-        input_data={
-            "distribution": distribution,
-            "mean": mean,
-            "std": std
-        },
-        parameters={"n_samples": n_samples}
-    )
-    
-    return await process_cognitive_request(req)
-
-
-@app.post(
-    "/cognitive/logical/graph",
-    response_model=CognitiveResponseModel,
-    tags=["Logical Operations"]
-)
-async def logical_graph_analysis(
-    request_data: dict,
-    question: Optional[str] = None
-):
-    """
-    Specialized endpoint for graph-based logical operations.
-    
-    Performs connected component analysis and shortest path computation.
-    
-    Request body should contain:
-    - nodes: Number of nodes
-    - edges: Edge list with optional weights
-    - source: Source node for path finding (optional)
-    """
-    nodes = request_data.get("nodes", 0)
-    edges = request_data.get("edges", [])
-    source = request_data.get("source", 0)
-    
-    req = CognitiveRequestModel(
-        question=question or "Analyze graph",
-        context_bucket="LOGICAL",
-        requested_operation="COMPARE",
-        input_data={
-            "nodes": nodes,
-            "edges": edges,
-            "source": source
-        }
-    )
-    
-    return await process_cognitive_request(req)
-
-
-# =============================================================================
-# ERROR HANDLERS
-# =============================================================================
-
-@app.exception_handler(ValueError)
-async def value_error_handler(request, exc):
     return {
-        "success": False,
-        "error": "validation_error",
-        "detail": str(exc)
+        "query": request.keywords,
+        "results": [
+            {
+                "id": eq.id,
+                "name": eq.name,
+                "formula": eq.formula,
+                "description": eq.description,
+                "variables": eq.variables,
+                "score": score
+            }
+            for eq, score in results
+        ],
+        "count": len(results)
     }
 
 
-@app.exception_handler(Exception)
-async def general_exception_handler(request, exc):
+@app.get("/cognitive/equations/{equation_id}", tags=["Equations"])
+async def get_equation(equation_id: str):
+    """Get a specific equation by ID."""
+    equation = pipeline.equation_db.get_equation(equation_id)
+    
+    if not equation:
+        raise HTTPException(status_code=404, detail=f"Equation '{equation_id}' not found")
+    
     return {
-        "success": False,
-        "error": "internal_error",
-        "detail": str(exc)
+        "id": equation.id,
+        "name": equation.name,
+        "formula": equation.formula,
+        "description": equation.description,
+        "variables": equation.variables,
+        "models": equation.models,
+        "tools": equation.tools,
+        "operations": equation.operations,
+        "buckets": equation.buckets,
+        "tags": equation.tags
     }
+
+
+@app.get("/cognitive/session/{session_id}", response_model=CognitiveResponseModel, tags=["Cognitive Pipeline"])
+async def get_session_state(session_id: str):
+    """Get current state of a cognitive session."""
+    try:
+        state = pipeline.get_state(session_id)
+        
+        state_summary = {
+            "current_stage": state.current_stage,
+            "primary_operation": state.operation_lock.primary_operation if state.operation_lock else None,
+            "bucket": state.bucket_assignment.primary_bucket if state.bucket_assignment else None,
+            "model": state.model_selection.primary_model if state.model_selection else None,
+            "tool": state.tool_selection.primary_tool if state.tool_selection else None,
+            "steps_completed": len(state.step_results),
+            "is_complete": state.is_complete
+        }
+        
+        return CognitiveResponseModel(
+            session_id=session_id,
+            stage=state.current_stage,
+            requires_user_input=not state.is_complete,
+            user_prompt=None,
+            partial_result=None,
+            final_result={
+                "question_part": state.final_result.question_part,
+                "final_value": state.final_result.final_value,
+                "unit": state.final_result.unit
+            } if state.final_result else None,
+            state_summary=state_summary
+        )
+        
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
 
 
 # =============================================================================
 # MAIN ENTRY POINT
 # =============================================================================
 
+def main():
+    """Run the MentalOS API server."""
+    print("🧠 Starting MentalOS Cognitive Engine v1.0.0")
+    print("🔒 Binding to 127.0.0.1:8000 (localhost only)")
+    print("📚 Documentation: http://127.0.0.1:8000/docs")
+    
+    uvicorn.run(
+        "mentalos.api.app:app",
+        host="127.0.0.1",  # Secure: localhost only
+        port=8000,
+        reload=False,
+        log_level="info"
+    )
+
+
 if __name__ == "__main__":
-    import uvicorn
-    # Secure binding: only accessible from localhost (127.0.0.1)
-    # Prevents exposure to local network (0.0.0.0 would bind to all interfaces)
-    uvicorn.run(app, host="127.0.0.1", port=8000)
+    main()
