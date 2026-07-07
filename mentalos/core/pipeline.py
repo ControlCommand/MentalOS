@@ -5,7 +5,7 @@ Zero OOP for business logic - pure functions only.
 Single Primary Operation Lock enforced.
 """
 
-from typing import Callable, Any
+from typing import Callable, Any, Optional
 import numpy as np
 from numpy.typing import NDArray
 
@@ -192,7 +192,7 @@ def execute_spatial_transform(
             direction = normalize_vector(np.array(ray_data["direction"], dtype=np.float64))
             ray = SpatialRay(origin=origin, direction=direction)
             
-            closest_hit = None
+            closest_hit: Optional[RayHit] = None
             closest_t = np.inf
             
             for obj in objects:
@@ -201,7 +201,7 @@ def execute_spatial_transform(
                     closest_t = hit.t
                     closest_hit = hit
             
-            if closest_hit:
+            if closest_hit is not None and closest_hit.point is not None:
                 results.append([
                     closest_hit.t,
                     closest_hit.point[0], closest_hit.point[1], closest_hit.point[2],

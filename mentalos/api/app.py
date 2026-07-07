@@ -4,7 +4,7 @@ Production-ready API boundary following industry standards.
 """
 
 from fastapi import FastAPI, HTTPException, status
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Any, Union
 import numpy as np
 
@@ -25,8 +25,8 @@ class CognitiveRequestModel(BaseModel):
     input_data: dict = Field(default_factory=dict, description="Input data for processing")
     parameters: Optional[dict] = Field(default=None, description="Optional parameters")
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "question": "Find where a ray from origin hits a sphere",
                 "context_bucket": "SPATIAL",
@@ -49,6 +49,7 @@ class CognitiveRequestModel(BaseModel):
                 "parameters": {}
             }
         }
+    )
 
 
 class CognitiveResponseModel(BaseModel):
@@ -61,8 +62,8 @@ class CognitiveResponseModel(BaseModel):
     execution_log: list[str]
     intermediate_results: dict
     
-    class Config:
-        json_schema_extra = {
+    model_config = ConfigDict(
+        json_schema_extra={
             "example": {
                 "success": True,
                 "identified_operation": "TRANSFORM",
@@ -79,6 +80,7 @@ class CognitiveResponseModel(BaseModel):
                 "intermediate_results": {"scene_objects": 1}
             }
         }
+    )
 
 
 class HealthResponseModel(BaseModel):
@@ -148,17 +150,17 @@ async def process_cognitive_request(request: CognitiveRequestModel):
             context_bucket=request.context_bucket,
             requested_operation=request.requested_operation,
             input_data=request.input_data,
-            parameters=request.parameters
+            parameters=request.parameters or {}
         )
         
         # Execute the deterministic pipeline
         result: CognitiveState = execute_cognitive_pipeline(cognitive_request)
         
         # Check for errors in the result
-        if result.final_answer.startswith("Error:") or result.final_answer.startswith("Execution failed:"):
+        if result.final_answer is None or result.final_answer.startswith("Error:") or result.final_answer.startswith("Execution failed:"):
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail=result.final_answer
+                detail=result.final_answer or "Unknown error"
             )
         
         # Build response
@@ -351,4 +353,6 @@ async def general_exception_handler(request, exc):
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    # Secure binding: only accessible from localhost (127.0.0.1)
+    # Prevents exposure to local network (0.0.0.0 would bind to all interfaces)
+    uvicorn.run(app, host="127.0.0.1", port=8000)
