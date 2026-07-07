@@ -1,100 +1,51 @@
 """
-MentalOS Types - Core Type Definitions
-
-Strict typing with NewType and Annotated arrays for physics/spatial inference.
-Data-Oriented Design: frozen dataclasses only, no OOP business logic.
+MentalOS Type Definitions
+Strictly typed data structures for the cognitive pipeline.
+No business logic here - only data containers.
 """
+
 from __future__ import annotations
-from typing import Optional, List, Dict, Any, Literal, Union
+from typing import Literal, Optional, List, Dict, Any, Union
 from dataclasses import dataclass, field
 import numpy as np
 from numpy.typing import NDArray
 from typing_extensions import Annotated
 
-# =============================================================================
-# TYPE ALIASES - Strict NumPy Array Types
-# =============================================================================
-
+# Type Aliases for strict typing
 Vector2D = Annotated[NDArray[np.float64], "Shape[2]"]
 Vector3D = Annotated[NDArray[np.float64], "Shape[3]"]
 Vector4D = Annotated[NDArray[np.float64], "Shape[4]"]
 Matrix2x2 = Annotated[NDArray[np.float64], "Shape[2,2]"]
 Matrix3x3 = Annotated[NDArray[np.float64], "Shape[3,3]"]
 Matrix4x4 = Annotated[NDArray[np.float64], "Shape[4,4]"]
+TransformMatrix = Matrix4x4
 Quaternion = Annotated[NDArray[np.float64], "Shape[4]"]
-TransformMatrix = Annotated[NDArray[np.float64], "Shape[4,4]"]
 
-Scalar = float
-AngleRad = Annotated[float, "radians"]
-AngleDeg = Annotated[float, "degrees"]
-Distance = Annotated[float, "meters"]
-Time = Annotated[float, "seconds"]
-Velocity = Annotated[float, "m/s"]
-Acceleration = Annotated[float, "m/s^2"]
-Force = Annotated[float, "newtons"]
-Mass = Annotated[float, "kg"]
-Work = Annotated[float, "joules"]
-Energy = Annotated[float, "joules"]
-Power = Annotated[float, "watts"]
-Momentum = Annotated[float, "kg*m/s"]
+# Primary Operations (The 5 Verbs)
+PrimaryOperation = Literal["accumulate", "transform", "scale", "estimate", "differentiate"]
 
-# =============================================================================
-# PRIMARY OPERATIONS (The 5 Verbs)
-# =============================================================================
+# Cognitive Buckets (6 Domains)
+Bucket = Literal["accumulation", "transformation", "geometry", "kinematics", "dynamics", "conservation"]
 
-PrimaryOperation = Literal[
-    "accumulate",      # Integration, summation, work, energy accumulation
-    "transform",       # Coordinate transforms, vector resolution, rotations
-    "scale",           # Ratios, proportions, scaling factors
-    "estimate",        # Averages, approximations, statistical estimates
-    "differentiate"    # Rates of change, derivatives, slopes
-]
-
-# =============================================================================
-# BUCKETS (6 Cognitive Buckets)
-# =============================================================================
-
-Bucket = Literal[
-    "accumulation",    # Work, energy, impulse, charge accumulation
-    "transformation",  # Vector resolution, coordinate systems, rotations
-    "geometry",        # Distances, angles, shapes, spatial relationships
-    "kinematics",      # Motion without forces, velocity, acceleration
-    "dynamics",        # Forces, Newton's laws, momentum
-    "conservation"     # Conservation laws, energy, momentum, charge
-]
-
-# =============================================================================
-# MODELS (Physics Frameworks)
-# =============================================================================
-
+# Models (Physics/Math Frameworks)
 Model = Literal[
-    "newtonian_mechanics",
     "work_energy_theorem",
-    "conservation_of_energy",
-    "conservation_of_momentum",
-    "kinematics_constant_acceleration",
-    "kinematics_projectile_motion",
+    "newton_second_law",
+    "kinematics_equations",
+    "conservation_momentum",
+    "conservation_energy",
+    "thermodynamics_first_law",
+    "thermodynamics_second_law",
+    "wave_equation",
+    "coulomb_law",
+    "ohm_law",
+    "gravitation_law",
+    "projectile_motion",
     "circular_motion",
-    "rotational_dynamics",
-    "simple_harmonic_motion",
-    "gravitation",
-    "fluid_mechanics",
-    "thermodynamics",
-    "electrostatics",
-    "electric_circuits",
-    "magnetism",
-    "electromagnetic_induction",
-    "waves_optics",
-    "special_relativity",
-    "quantum_mechanics",
-    "statistical_mechanics",
-    "equilibrium_statics"
+    "simple_harmonic_motion"
 ]
 
-# =============================================================================
-# TOOLS (Mathematical Tools)
-# =============================================================================
-
+# Tools (Mathematical Methods)
 Tool = Literal[
     "trigonometry",
     "vector_algebra",
@@ -103,284 +54,195 @@ Tool = Literal[
     "linear_algebra",
     "differential_equations",
     "statistics",
-    "complex_numbers",
-    "matrix_operations",
-    "coordinate_geometry",
-    "unit_conversion",
     "algebraic_manipulation"
 ]
 
-# =============================================================================
-# DATA EXTRACTION TYPES
-# =============================================================================
+# Question Part Identifier
+QuestionPart = Literal["a", "b", "c", "d", "e", "f", "g", "h"]
+
 
 @dataclass(frozen=True)
 class ExtractedValue:
-    """A single extracted value from problem text."""
-    symbol: str
+    """Immutable extracted value from problem statement."""
+    name: str
     value: float
     unit: str
-    description: str
-    uncertainty: Optional[float] = None
+    confidence: float = 1.0
 
 
 @dataclass(frozen=True)
-class ExtractedVector:
-    """A vector value with magnitude and direction."""
-    symbol: str
+class VectorData:
+    """Immutable vector data structure."""
     magnitude: float
-    direction_angle: AngleDeg
-    direction_reference: str  # e.g., "horizontal", "positive_x_axis"
-    unit: str
-    components: Optional[Dict[str, float]] = None
+    direction_degrees: float
+    components: Optional[Vector2D] = None
+    
+    def __post_init__(self):
+        if self.components is None:
+            theta_rad = np.deg2rad(self.direction_degrees)
+            comp = np.array([
+                self.magnitude * np.cos(theta_rad),
+                self.magnitude * np.sin(theta_rad)
+            ], dtype=np.float64)
+            object.__setattr__(self, 'components', comp)
 
 
 @dataclass(frozen=True)
-class ProblemContext:
-    """Background context extracted from problem statement."""
-    objects: List[str]
-    conditions: List[str]
-    constraints: List[str]
-    assumptions: List[str]
-    known_values: List[Union[ExtractedValue, ExtractedVector]]
-
-
-# =============================================================================
-# COGNITIVE PIPELINE STATE
-# =============================================================================
-
-@dataclass(frozen=True)
-class QuestionAnalysis:
-    """Stage 1: Question parsing and intent recognition."""
-    raw_text: str
-    parts: Dict[str, str]  # a, b, c, d -> question text
-    current_part: Optional[str]  # Which part we're solving
-    context: ProblemContext
-    keywords: List[str]
-    tokens: List[str]
+class SpatialPoint:
+    """Immutable 3D point."""
+    x: float
+    y: float
+    z: float
+    
+    def to_array(self) -> Vector3D:
+        return np.array([self.x, self.y, self.z], dtype=np.float64)
 
 
 @dataclass(frozen=True)
-class RequestedOutput:
-    """Stage 2: What the question wants."""
-    target_quantity: str  # e.g., "work", "velocity", "acceleration"
-    output_type: Literal["instantaneous", "average", "maximum", "minimum", "total", "net"]
-    symbol: str
-    unit: str
-    description: str
+class SpatialRay:
+    """Immutable ray in 3D space."""
+    origin: SpatialPoint
+    direction: Vector3D
+    
+    def __post_init__(self):
+        # Normalize direction
+        norm = np.linalg.norm(self.direction)
+        if norm > 0:
+            normalized_dir = self.direction / norm
+            object.__setattr__(self, 'direction', normalized_dir)
 
 
 @dataclass(frozen=True)
-class ConstraintLock:
-    """Stage 3: Isolate variables and constraints."""
-    relevant_variables: List[str]
-    ignored_variables: List[str]
-    fixed_parameters: Dict[str, ExtractedValue]
-    variable_parameters: Dict[str, ExtractedValue]
-    boundary_conditions: List[str]
-    scope_keywords: List[str]
+class RayHit:
+    """Immutable ray intersection result."""
+    hit: bool
+    t: float
+    point: Optional[SpatialPoint] = None
+    normal: Optional[Vector3D] = None
+    
+    def __post_init__(self):
+        if self.hit and self.point is None and self.t >= 0:
+            # Calculate hit point if not provided
+            pass  # Will be calculated during execution
 
 
 @dataclass(frozen=True)
-class OperationLock:
-    """Stage 4: Primary operation determination (Winner Takes All)."""
-    primary_operation: PrimaryOperation
-    confidence: float
-    reasoning: str
-    secondary_operations: List[PrimaryOperation] = field(default_factory=list)
-    operation_order: List[PrimaryOperation] = field(default_factory=list)
+class Transform:
+    """Immutable transformation matrix."""
+    matrix: TransformMatrix
+    position: Vector3D = field(default_factory=lambda: np.zeros(3, dtype=np.float64))
+    rotation: Optional[Quaternion] = None
 
 
 @dataclass(frozen=True)
-class BucketAssignment:
-    """Stage 5: Bucket determination."""
-    primary_bucket: Bucket
-    confidence: float
-    reasoning: str
-    alternative_buckets: List[Bucket] = field(default_factory=list)
+class BoundingBox:
+    """Immutable axis-aligned bounding box."""
+    min_point: SpatialPoint
+    max_point: SpatialPoint
+    
+    def contains(self, point: SpatialPoint) -> bool:
+        return (self.min_point.x <= point.x <= self.max_point.x and
+                self.min_point.y <= point.y <= self.max_point.y and
+                self.min_point.z <= point.z <= self.max_point.z)
 
 
 @dataclass(frozen=True)
-class ModelSelection:
-    """Stage 6: Physics model selection."""
-    primary_model: Model
-    confidence: float
-    reasoning: str
-    supporting_principles: List[str] = field(default_factory=list)
+class SceneObject:
+    """Immutable scene object."""
+    id: str
+    type: Literal["sphere", "box", "plane", "mesh"]
+    transform: Transform
+    bbox: BoundingBox
+    properties: Dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
-class ToolSelection:
-    """Stage 7: Mathematical tool selection."""
-    primary_tool: Tool
-    confidence: float
-    reasoning: str
-    required_formulas: List[str] = field(default_factory=list)
+class Scene:
+    """Immutable scene collection."""
+    objects: tuple[SceneObject, ...]
+    bounds: Optional[BoundingBox] = None
+    
+    def __post_init__(self):
+        if self.bounds is None and self.objects:
+            all_points = []
+            for obj in self.objects:
+                all_points.extend([obj.bbox.min_point, obj.bbox.max_point])
+            min_coords = [min(p.x for p in all_points), 
+                         min(p.y for p in all_points), 
+                         min(p.z for p in all_points)]
+            max_coords = [max(p.x for p in all_points), 
+                         max(p.y for p in all_points), 
+                         max(p.z for p in all_points)]
+            bounds = BoundingBox(
+                SpatialPoint(*min_coords),
+                SpatialPoint(*max_coords)
+            )
+            object.__setattr__(self, 'bounds', bounds)
 
 
 @dataclass(frozen=True)
-class NestedOperation:
-    """Represents a nested/sub-operation in the dependency chain."""
-    order: int  # 1st, 2nd, 3rd, etc.
+class OperationNode:
+    """Immutable node in the operation DAG."""
     operation: PrimaryOperation
     bucket: Bucket
     model: Model
     tool: Tool
-    target_variable: str
-    dependencies: List[str] = field(default_factory=list)
-    result: Optional[float] = None
-    result_unit: Optional[str] = None
+    dependencies: tuple[str, ...] = field(default_factory=tuple)
+    order: int = 0
 
 
 @dataclass(frozen=True)
-class ExecutionPlan:
-    """Stage 8: Complete execution plan with nested operations."""
-    primary_operation: OperationLock
-    nested_operations: List[NestedOperation]
-    execution_order: List[int]
-    final_formula: str
+class CognitiveRequest:
+    """Immutable cognitive processing request."""
+    question_text: str
+    part: Optional[QuestionPart] = None
+    context: Optional[str] = None
+    parameters: Dict[str, Any] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class CognitiveState:
+    """Immutable cognitive state."""
+    extracted_values: tuple[ExtractedValue, ...] = field(default_factory=tuple)
+    identified_operation: Optional[PrimaryOperation] = None
+    selected_bucket: Optional[Bucket] = None
+    selected_model: Optional[Model] = None
+    selected_tool: Optional[Tool] = None
+    operation_dag: tuple[OperationNode, ...] = field(default_factory=tuple)
     intermediate_results: Dict[str, float] = field(default_factory=dict)
+    final_answer: Optional[float] = None
+    answer_unit: Optional[str] = None
+    audit_log: tuple[str, ...] = field(default_factory=tuple)
 
 
 @dataclass(frozen=True)
-class EquationMatch:
-    """Matched equation from database."""
-    equation_id: str
-    formula: str
-    variables: List[str]
-    description: str
-    applicable_models: List[Model]
-    applicable_tools: List[Tool]
-
-
-@dataclass(frozen=True)
-class SpatialVisualization:
-    """Spatial representation for vector resolution, etc."""
-    visualization_type: Literal["vector_triangle", "free_body_diagram", "coordinate_system", "motion_diagram"]
-    elements: Dict[str, Any]
-    annotations: List[str]
-    svg_representation: Optional[str] = None
-
-
-# =============================================================================
-# RESULTS AND AUDIT
-# =============================================================================
-
-@dataclass(frozen=True)
-class StepResult:
-    """Result of a single computation step."""
-    step_number: int
-    operation: PrimaryOperation
-    variable_name: str
-    value: float
-    unit: str
-    formula_used: str
-    inputs: Dict[str, float]
+class PipelineResult:
+    """Immutable pipeline execution result."""
     success: bool
+    state: CognitiveState
+    answer: Optional[float] = None
+    unit: Optional[str] = None
+    explanation: str = ""
     error_message: Optional[str] = None
 
 
 @dataclass(frozen=True)
-class CognitiveResult:
-    """Final result of cognitive pipeline."""
-    question_part: str
-    requested_output: RequestedOutput
-    final_value: float
-    unit: str
-    significant_figures: int
-    step_results: List[StepResult]
-    audit_feedback: Optional[str] = None
+class EquationMatch:
+    """Immutable equation match result."""
+    equation_name: str
+    formula: str
+    variables: tuple[str, ...]
+    description: str
+    confidence: float
 
 
-@dataclass(frozen=True)
-class AuditFeedback:
-    """LLM audit feedback on solution approach."""
-    approach_correct: bool
-    succinct_feedback: str  # 250-300 words max
-    thought_provoking_questions: List[str]
-    identified_issues: List[str] = field(default_factory=list)
-    suggestions: List[str] = field(default_factory=list)
-
-
-# =============================================================================
-# USER INTERACTION TYPES
-# =============================================================================
-
-@dataclass(frozen=True)
-class UserPrompt:
-    """Prompt for user interaction."""
-    prompt_type: Literal[
-        "select_question_part",
-        "confirm_primary_operation",
-        "identify_secondary_operations",
-        "select_equation",
-        "input_values",
-        "confirm_units",
-        "continue_next_part",
-        "provide_spatial_input"
-    ]
-    message: str
-    options: Optional[List[str]] = None
-    required_input_type: Optional[str] = None
-
-
-@dataclass(frozen=True)
-class UserResponse:
-    """User response to prompts."""
-    prompt_type: str
-    response: Any
-    confirmed: bool
-    additional_notes: Optional[str] = None
-
-
-# =============================================================================
-# COMPLETE COGNITIVE STATE
-# =============================================================================
-
-@dataclass(frozen=True)
-class CognitiveState:
-    """Complete state of the cognitive pipeline."""
-    session_id: str
-    question_analysis: QuestionAnalysis
-    requested_output: Optional[RequestedOutput] = None
-    constraint_lock: Optional[ConstraintLock] = None
-    operation_lock: Optional[OperationLock] = None
-    bucket_assignment: Optional[BucketAssignment] = None
-    model_selection: Optional[ModelSelection] = None
-    tool_selection: Optional[ToolSelection] = None
-    execution_plan: Optional[ExecutionPlan] = None
-    step_results: List[StepResult] = field(default_factory=list)
-    final_result: Optional[CognitiveResult] = None
-    audit_feedback: Optional[AuditFeedback] = None
-    user_prompts: List[UserPrompt] = field(default_factory=list)
-    user_responses: List[UserResponse] = field(default_factory=list)
-    current_stage: str = "question_analysis"
-    is_complete: bool = False
-    has_errors: bool = False
-    error_messages: List[str] = field(default_factory=list)
-
-
-# =============================================================================
-# API REQUEST/RESPONSE TYPES
-# =============================================================================
-
-@dataclass(frozen=True)
-class CognitiveRequest:
-    """Request to process a physics/math problem."""
-    question_text: str
-    question_parts: Optional[Dict[str, str]] = None
-    selected_part: Optional[str] = None
-    user_context: Optional[Dict[str, Any]] = None
-
-
-@dataclass(frozen=True)
-class CognitiveResponse:
-    """Response from cognitive pipeline."""
-    session_id: str
-    stage: str
-    state: CognitiveState
-    requires_user_input: bool
-    user_prompt: Optional[UserPrompt] = None
-    partial_result: Optional[StepResult] = None
-    final_result: Optional[CognitiveResult] = None
-    audit_feedback: Optional[AuditFeedback] = None
+__all__ = [
+    'Vector2D', 'Vector3D', 'Vector4D',
+    'Matrix2x2', 'Matrix3x3', 'Matrix4x4',
+    'TransformMatrix', 'Quaternion',
+    'PrimaryOperation', 'Bucket', 'Model', 'Tool', 'QuestionPart',
+    'ExtractedValue', 'VectorData', 'SpatialPoint', 'SpatialRay',
+    'RayHit', 'Transform', 'BoundingBox', 'SceneObject', 'Scene',
+    'OperationNode', 'CognitiveRequest', 'CognitiveState',
+    'PipelineResult', 'EquationMatch'
+]

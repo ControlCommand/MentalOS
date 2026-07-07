@@ -1,135 +1,65 @@
 """
-MentalOS Types - Public API Router
-
-Clean gatekeeper that exposes public API via __all__.
-No business logic, no heavy imports - pure routing only.
+MentalOS Types Package
+Clean router exposing public API only.
+No business logic - pure orchestration.
 """
+
 from mentalos.types.core_types import (
-    # Type Aliases
     Vector2D,
     Vector3D,
     Vector4D,
     Matrix2x2,
     Matrix3x3,
     Matrix4x4,
-    Quaternion,
     TransformMatrix,
-    Scalar,
-    AngleRad,
-    AngleDeg,
-    Distance,
-    Time,
-    Velocity,
-    Acceleration,
-    Force,
-    Mass,
-    Work,
-    Energy,
-    Power,
-    Momentum,
-    
-    # Primary Operations & Buckets
+    Quaternion,
     PrimaryOperation,
     Bucket,
     Model,
     Tool,
-    
-    # Data Extraction Types
+    QuestionPart,
     ExtractedValue,
-    ExtractedVector,
-    ProblemContext,
-    
-    # Cognitive Pipeline State
-    QuestionAnalysis,
-    RequestedOutput,
-    ConstraintLock,
-    OperationLock,
-    BucketAssignment,
-    ModelSelection,
-    ToolSelection,
-    NestedOperation,
-    ExecutionPlan,
-    EquationMatch,
-    SpatialVisualization,
-    
-    # Results and Audit
-    StepResult,
-    CognitiveResult,
-    AuditFeedback,
-    
-    # User Interaction
-    UserPrompt,
-    UserResponse,
-    
-    # Complete State
-    CognitiveState,
-    
-    # API Types
+    VectorData,
+    SpatialPoint,
+    SpatialRay,
+    RayHit,
+    Transform,
+    BoundingBox,
+    SceneObject,
+    Scene,
+    OperationNode,
     CognitiveRequest,
-    CognitiveResponse,
+    CognitiveState,
+    PipelineResult,
+    EquationMatch,
 )
 
 __all__ = [
-    # Type Aliases
-    "Vector2D",
-    "Vector3D",
-    "Vector4D",
-    "Matrix2x2",
-    "Matrix3x3",
-    "Matrix4x4",
-    "Quaternion",
-    "TransformMatrix",
-    "Scalar",
-    "AngleRad",
-    "AngleDeg",
-    "Distance",
-    "Time",
-    "Velocity",
-    "Acceleration",
-    "Force",
-    "Mass",
-    "Work",
-    "Energy",
-    "Power",
-    "Momentum",
-    
-    # Primary Operations & Buckets
-    "PrimaryOperation",
-    "Bucket",
-    "Model",
-    "Tool",
-    
-    # Data Extraction Types
-    "ExtractedValue",
-    "ExtractedVector",
-    "ProblemContext",
-    
-    # Cognitive Pipeline State
-    "QuestionAnalysis",
-    "RequestedOutput",
-    "ConstraintLock",
-    "OperationLock",
-    "BucketAssignment",
-    "ModelSelection",
-    "ToolSelection",
-    "NestedOperation",
-    "ExecutionPlan",
-    "EquationMatch",
-    "SpatialVisualization",
-    
-    # Results and Audit
-    "StepResult",
-    "CognitiveResult",
-    "AuditFeedback",
-    
-    # User Interaction
-    "UserPrompt",
-    "UserResponse",
-    
-    # Complete State
-    "CognitiveState",
-    
-    # API Types
-    "CognitiveRequest",
-    "CognitiveResponse",
+    'Vector2D',
+    'Vector3D',
+    'Vector4D',
+    'Matrix2x2',
+    'Matrix3x3',
+    'Matrix4x4',
+    'TransformMatrix',
+    'Quaternion',
+    'PrimaryOperation',
+    'Bucket',
+    'Model',
+    'Tool',
+    'QuestionPart',
+    'ExtractedValue',
+    'VectorData',
+    'SpatialPoint',
+    'SpatialRay',
+    'RayHit',
+    'Transform',
+    'BoundingBox',
+    'SceneObject',
+    'Scene',
+    'OperationNode',
+    'CognitiveRequest',
+    'CognitiveState',
+    'PipelineResult',
+    'EquationMatch',
 ]
