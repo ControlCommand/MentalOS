@@ -4,9 +4,12 @@ Production-ready API boundary following industry standards.
 """
 
 from fastapi import FastAPI, HTTPException, status
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field, ConfigDict
 from typing import Optional, Any, Union
 import numpy as np
+import os
 
 from mentalos.core.pipeline import execute_cognitive_pipeline
 from mentalos.types import (
@@ -101,6 +104,20 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
+
+# Mount static files for web UI
+static_path = os.path.join(os.path.dirname(__file__), "..", "static")
+if os.path.exists(static_path):
+    app.mount("/static", StaticFiles(directory=static_path), name="static")
+
+
+@app.get("/", response_class=FileResponse, tags=["System"])
+async def root():
+    """Serve the main web UI."""
+    index_path = os.path.join(static_path, "index.html")
+    if os.path.exists(index_path):
+        return index_path
+    raise HTTPException(status_code=404, detail="Web UI not found")
 
 
 @app.get("/health", response_model=HealthResponseModel, tags=["System"])
