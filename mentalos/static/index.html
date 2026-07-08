@@ -8,6 +8,466 @@
         :root {
             --bg-primary: #0f172a;
             --bg-secondary: #1e293b;
+            --bg-card: #334155;
+            --text-primary: #f1f5f9;
+            --text-secondary: #94a3b8;
+            --accent: #38bdf8;
+            --accent-hover: #7dd3fc;
+            --success: #22c55e;
+            --warning: #f59e0b;
+            --error: #ef4444;
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+
+        body {
+            font-family: 'Segoe UI', system-ui, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            line-height: 1.6;
+            min-height: 100vh;
+        }
+
+        .container { max-width: 1400px; margin: 0 auto; padding: 20px; }
+
+        header {
+            text-align: center;
+            padding: 30px 0;
+            border-bottom: 1px solid var(--bg-card);
+            margin-bottom: 30px;
+        }
+
+        h1 { color: var(--accent); font-size: 2.5rem; margin-bottom: 10px; }
+        .subtitle { color: var(--text-secondary); font-size: 1.1rem; }
+
+        .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+
+        .card {
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 25px;
+            border: 1px solid var(--bg-card);
+        }
+
+        .card h2 { color: var(--accent); margin-bottom: 15px; font-size: 1.3rem; }
+
+        textarea {
+            width: 100%;
+            min-height: 180px;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            border: 2px solid var(--bg-card);
+            border-radius: 8px;
+            padding: 15px;
+            font-size: 14px;
+            resize: vertical;
+            transition: border-color 0.3s;
+        }
+
+        textarea:focus { outline: none; border-color: var(--accent); }
+
+        button {
+            background: var(--accent);
+            color: var(--bg-primary);
+            border: none;
+            padding: 12px 24px;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: 600;
+            font-size: 14px;
+            transition: all 0.3s;
+            margin-top: 15px;
+        }
+
+        button:hover { background: var(--accent-hover); transform: translateY(-2px); }
+        button:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+        .btn-secondary {
+            background: transparent;
+            border: 2px solid var(--accent);
+            color: var(--accent);
+        }
+
+        .btn-secondary:hover { background: var(--accent); color: var(--bg-primary); }
+
+        .result-panel {
+            background: var(--bg-primary);
+            border-radius: 8px;
+            padding: 20px;
+            margin-top: 20px;
+            max-height: 500px;
+            overflow-y: auto;
+        }
+
+        .stage-indicator {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+            margin-bottom: 20px;
+        }
+
+        .stage {
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 600;
+            background: var(--bg-card);
+            color: var(--text-secondary);
+        }
+
+        .stage.active { background: var(--accent); color: var(--bg-primary); }
+        .stage.complete { background: var(--success); color: white; }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            padding: 10px 0;
+            border-bottom: 1px solid var(--bg-card);
+        }
+
+        .info-label { color: var(--text-secondary); }
+        .info-value { font-weight: 600; color: var(--accent); }
+
+        .nested-ops {
+            background: var(--bg-primary);
+            border-radius: 8px;
+            padding: 15px;
+            margin: 15px 0;
+        }
+
+        .nested-op-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px;
+            background: var(--bg-card);
+            border-radius: 6px;
+            margin-bottom: 10px;
+        }
+
+        .op-order {
+            background: var(--accent);
+            color: var(--bg-primary);
+            width: 24px;
+            height: 24px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: bold;
+            font-size: 12px;
+        }
+
+        .final-result {
+            background: linear-gradient(135deg, #064e3b 0%, #065f46 100%);
+            border: 2px solid var(--success);
+            border-radius: 12px;
+            padding: 25px;
+            margin-top: 20px;
+            text-align: center;
+        }
+
+        .final-value {
+            font-size: 3rem;
+            font-weight: bold;
+            color: var(--success);
+            margin: 10px 0;
+        }
+
+        .final-unit { font-size: 1.5rem; color: var(--text-secondary); }
+
+        pre {
+            background: var(--bg-primary);
+            padding: 15px;
+            border-radius: 8px;
+            overflow-x: auto;
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        .hidden { display: none; }
+
+        .loading {
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 3px solid var(--bg-card);
+            border-top-color: var(--accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        .preset-btns { display: flex; gap: 10px; flex-wrap: wrap; margin-bottom: 15px; }
+
+        .preset-btn {
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            border: none;
+            padding: 8px 16px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-size: 12px;
+            transition: all 0.3s;
+        }
+
+        .preset-btn:hover { background: var(--accent); color: var(--bg-primary); }
+
+        @media (max-width: 900px) {
+            .grid { grid-template-columns: 1fr; }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🧠 MentalOS v1.0.0</h1>
+            <p class="subtitle">Deterministic Physics/Spatial Inference Engine with DAG-based Operation Resolution</p>
+        </header>
+
+        <div class="grid">
+            <!-- Input Panel -->
+            <div class="card">
+                <h2>📝 Problem Input</h2>
+
+                <div class="preset-btns">
+                    <button class="preset-btn" onclick="loadPreset('work')">Work Example</button>
+                    <button class="preset-btn" onclick="loadPreset('vector')">Vector Resolution</button>
+                    <button class="preset-btn" onclick="loadPreset('friction')">Friction Problem</button>
+                    <button class="preset-btn" onclick="loadPreset('multi')">Multi-part</button>
+                </div>
+
+                <textarea id="questionInput" placeholder="Enter your physics problem here...
+
+Example: A man pushes a 45 kg box from rest along a horizontal floor by exerting a force of 87 N downward at 33° to the horizontal against a friction force of 62 N over a distance of 13 m.
+a) How much work was done in moving the box?"></textarea>
+
+                <button id="analyzeBtn" onclick="analyzeProblem()">
+                    🔍 Analyze Problem
+                </button>
+
+                <div id="actionButtons" class="hidden">
+                    <button class="btn-secondary" onclick="executeNextStep()">⚡ Execute Next Step</button>
+                    <button class="btn-secondary" onclick="startNewProblem()">🔄 New Problem</button>
+                </div>
+            </div>
+
+            <!-- Results Panel -->
+            <div class="card">
+                <h2>📊 Analysis Results</h2>
+
+                <div id="stageIndicator" class="stage-indicator hidden">
+                    <span class="stage" id="stage1">Question</span>
+                    <span class="stage" id="stage2">Output</span>
+                    <span class="stage" id="stage3">Constraints</span>
+                    <span class="stage" id="stage4">Operation</span>
+                    <span class="stage" id="stage5">Bucket</span>
+                    <span class="stage" id="stage6">Model</span>
+                    <span class="stage" id="stage7">Tool</span>
+                    <span class="stage" id="stage8">Plan</span>
+                </div>
+
+                <div id="resultsContent" class="result-panel hidden">
+                    <div id="stateInfo"></div>
+                    <div id="nestedOperations"></div>
+                    <div id="stepResults"></div>
+                    <div id="finalResult"></div>
+                </div>
+
+                <div id="placeholderText" style="color: var(--text-secondary); text-align: center; padding: 40px;">
+                    Enter a physics problem and click "Analyze" to see the cognitive pipeline in action.
+                </div>
+            </div>
+        </div>
+
+        <!-- Full Response Debug -->
+        <div class="card" style="margin-top: 20px;">
+            <h2>🔬 Raw API Response</h2>
+            <pre id="rawResponse">No data yet...</pre>
+        </div>
+    </div>
+
+    <script>
+        let currentSessionId = null;
+        let currentStage = null;
+
+        const presets = {
+            work: `A man pushes a 45 kg box from rest along a horizontal floor by exerting a force of 87 N downward at 33° to the horizontal against a friction force of 62 N over a distance of 13 m.
+a) How much work was done in moving the box?`,
+
+            vector: `A force of 100 N is applied at an angle of 30° above the horizontal. Resolve this force into its x and y components.`,
+
+            friction: `A box experiences a friction force of 62 N while being pushed over a distance of 13 m. Calculate the work done by friction.`,
+
+            multi: `A 45 kg box is pushed from rest with a force of 87 N at 33° over 13 m against friction of 62 N.
+a) How much work was done in moving the box?
+b) What is the final velocity of the box?
+c) How long did it take to move this distance?`
+        };
+
+        function loadPreset(type) {
+            document.getElementById('questionInput').value = presets[type];
+        }
+
+        async function analyzeProblem() {
+            const question = document.getElementById('questionInput').value.trim();
+            if (!question) {
+                alert('Please enter a problem first!');
+                return;
+            }
+
+            const btn = document.getElementById('analyzeBtn');
+            btn.disabled = true;
+            btn.innerHTML = '<span class="loading"></span> Analyzing...';
+
+            try {
+                const response = await fetch('/cognitive/process', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({question_text: question})
+                });
+
+                const data = await response.json();
+                currentSessionId = data.session_id;
+                currentStage = data.stage;
+
+                displayResults(data);
+                document.getElementById('actionButtons').classList.remove('hidden');
+            } catch (error) {
+                alert('Error: ' + error.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = '🔍 Analyze Problem';
+            }
+        }
+
+        function displayResults(data) {
+            document.getElementById('placeholderText').classList.add('hidden');
+            document.getElementById('resultsContent').classList.remove('hidden');
+            document.getElementById('stageIndicator').classList.remove('hidden');
+
+            // Update stage indicators
+            const stages = ['stage1', 'stage2', 'stage3', 'stage4', 'stage5', 'stage6', 'stage7', 'stage8'];
+            const stageMap = {
+                'question_analysis': 1,
+                'requested_output': 2,
+                'constraint_lock': 3,
+                'operation_lock': 4,
+                'bucket_assignment': 5,
+                'model_selection': 6,
+                'tool_selection': 7,
+                'execution_plan': 8
+            };
+
+            stages.forEach((s, i) => {
+                const el = document.getElementById(s);
+                el.classList.remove('active', 'complete');
+                if (stageMap[data.stage] && i + 1 <= stageMap[data.stage]) {
+                    el.classList.add(i + 1 === stageMap[data.stage] ? 'active' : 'complete');
+                }
+            });
+
+            // Display state info
+            const summary = data.state_summary || {};
+            let infoHtml = `
+                <div class="info-row"><span class="info-label">Primary Operation:</span><span class="info-value">${summary.primary_operation || 'N/A'}</span></div>
+                <div class="info-row"><span class="info-label">Bucket:</span><span class="info-value">${summary.bucket || 'N/A'}</span></div>
+                <div class="info-row"><span class="info-label">Model:</span><span class="info-value">${summary.model || 'N/A'}</span></div>
+                <div class="info-row"><span class="info-label">Tool:</span><span class="info-value">${summary.tool || 'N/A'}</span></div>
+                <div class="info-row"><span class="info-label">Nested Operations:</span><span class="info-value">${summary.has_nested_operations ? 'Yes' : 'No'}</span></div>
+            `;
+            document.getElementById('stateInfo').innerHTML = infoHtml;
+
+            // Display nested operations
+            if (data.user_prompt && data.user_prompt.nested_operations) {
+                let nestedHtml = '<div class="nested-ops"><strong>Nested Operations Detected:</strong>';
+                data.user_prompt.nested_operations.forEach(op => {
+                    nestedHtml += `
+                        <div class="nested-op-item">
+                            <span class="op-order">${op.order}</span>
+                            <div>
+                                <strong>${op.operation}</strong> → ${op.target_variable}
+                                <br><small>Bucket: ${op.bucket} | Model: ${op.model} | Tool: ${op.tool}</small>
+                            </div>
+                        </div>
+                    `;
+                });
+                nestedHtml += '</div>';
+                document.getElementById('nestedOperations').innerHTML = nestedHtml;
+            } else {
+                document.getElementById('nestedOperations').innerHTML = '';
+            }
+
+            // Display partial results
+            if (data.partial_result) {
+                document.getElementById('stepResults').innerHTML = `
+                    <div class="info-row"><span class="info-label">Last Step:</span><span class="info-value">${data.partial_result.variable_name} = ${data.partial_result.value} ${data.partial_result.unit}</span></div>
+                    <div class="info-row"><span class="info-label">Formula:</span><span class="info-value">${data.partial_result.formula_used}</span></div>
+                `;
+            }
+
+            // Display final result
+            if (data.final_result) {
+                document.getElementById('finalResult').innerHTML = `
+                    <div class="final-result">
+                        <div>Final Answer for Part "${data.final_result.question_part}"</div>
+                        <div class="final-value">${data.final_result.final_value}</div>
+                        <div class="final-unit">${data.final_result.unit}</div>
+                    </div>
+                `;
+            } else {
+                document.getElementById('finalResult').innerHTML = '';
+            }
+
+            // Show raw response
+            document.getElementById('rawResponse').textContent = JSON.stringify(data, null, 2);
+        }
+
+        async function executeNextStep() {
+            if (!currentSessionId) return;
+
+            // For demo, execute with sample values
+            const response = await fetch('/cognitive/execute-step', {
+                method: 'POST',
+                headers: {'Content-Type': 'application/json'},
+                body: JSON.stringify({
+                    session_id: currentSessionId,
+                    step_number: 1,
+                    equation_id: 'work_constant_force',
+                    input_values: {F: 87.0, d: 13.0, θ: 33.0}
+                })
+            });
+
+            const data = await response.json();
+            displayResults(data);
+        }
+
+        function startNewProblem() {
+            currentSessionId = null;
+            currentStage = null;
+            document.getElementById('questionInput').value = '';
+            document.getElementById('resultsContent').classList.add('hidden');
+            document.getElementById('stageIndicator').classList.add('hidden');
+            document.getElementById('placeholderText').classList.remove('hidden');
+            document.getElementById('actionButtons').classList.add('hidden');
+            document.getElementById('rawResponse').textContent = 'No data yet...';
+        }
+    </script>
+</body>
+</html>
+
++++ mentalos/static/index.html (修改后)
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MentalOS - Cognitive Physics Engine</title>
+    <style>
+        :root {
+            --bg-primary: #0f172a;
+            --bg-secondary: #1e293b;
             --bg-tertiary: #334155;
             --text-primary: #f1f5f9;
             --text-secondary: #94a3b8;
@@ -17,6 +477,7 @@
             --accent-orange: #f59e0b;
             --border-color: #475569;
             --success: #22c55e;
+            --warning: #eab308;
             --error: #ef4444;
         }
 
@@ -27,7 +488,7 @@
         }
 
         body {
-            font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+            font-family: 'Segoe UI', system-ui, sans-serif;
             background: var(--bg-primary);
             color: var(--text-primary);
             line-height: 1.6;
@@ -43,8 +504,10 @@
         header {
             text-align: center;
             margin-bottom: 2rem;
-            padding-bottom: 2rem;
-            border-bottom: 1px solid var(--border-color);
+            padding: 2rem;
+            background: linear-gradient(135deg, var(--bg-secondary), var(--bg-tertiary));
+            border-radius: 12px;
+            border: 1px solid var(--border-color);
         }
 
         h1 {
@@ -64,6 +527,7 @@
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 2rem;
+            margin-bottom: 2rem;
         }
 
         @media (max-width: 1024px) {
@@ -77,42 +541,31 @@
             border-radius: 12px;
             padding: 1.5rem;
             border: 1px solid var(--border-color);
+            transition: transform 0.2s, box-shadow 0.2s;
         }
 
-        .card-header {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            margin-bottom: 1.5rem;
-            padding-bottom: 1rem;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .card-icon {
-            width: 32px;
-            height: 32px;
-            background: var(--accent-blue);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-size: 1.2rem;
+        .card:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
         }
 
         .card-title {
-            font-size: 1.25rem;
-            font-weight: 600;
+            font-size: 1.3rem;
+            color: var(--accent-blue);
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
         }
 
         textarea {
             width: 100%;
-            min-height: 200px;
+            min-height: 150px;
             background: var(--bg-tertiary);
             border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 1rem;
             color: var(--text-primary);
-            font-family: inherit;
             font-size: 1rem;
             resize: vertical;
             transition: border-color 0.2s;
@@ -123,80 +576,76 @@
             border-color: var(--accent-blue);
         }
 
+        .input-group {
+            margin-bottom: 1rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 0.5rem;
+            color: var(--text-secondary);
+            font-weight: 500;
+        }
+
+        input[type="text"],
+        input[type="number"] {
+            width: 100%;
+            padding: 0.75rem;
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            color: var(--text-primary);
+            font-size: 0.95rem;
+            transition: border-color 0.2s;
+        }
+
+        input:focus {
+            outline: none;
+            border-color: var(--accent-blue);
+        }
+
         .btn {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.75rem 1.5rem;
-            background: var(--accent-blue);
+            background: linear-gradient(135deg, var(--accent-blue), var(--accent-purple));
             color: white;
             border: none;
+            padding: 0.875rem 1.5rem;
             border-radius: 8px;
             font-size: 1rem;
-            font-weight: 500;
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s;
-            margin-top: 1rem;
+            transition: transform 0.2s, box-shadow 0.2s;
             width: 100%;
-            justify-content: center;
+            margin-top: 1rem;
         }
 
         .btn:hover {
-            background: #2563eb;
-            transform: translateY(-1px);
+            transform: translateY(-2px);
+            box-shadow: 0 4px 16px rgba(59, 130, 246, 0.4);
         }
 
-        .btn:disabled {
-            background: var(--bg-tertiary);
-            cursor: not-allowed;
-            transform: none;
+        .btn:active {
+            transform: translateY(0);
         }
 
         .btn-secondary {
             background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
         }
 
         .btn-secondary:hover {
-            background: var(--border-color);
+            box-shadow: 0 4px 16px rgba(148, 163, 184, 0.2);
         }
 
-        .part-selector {
-            display: flex;
-            gap: 0.5rem;
-            margin-top: 1rem;
-            flex-wrap: wrap;
-        }
-
-        .part-btn {
-            padding: 0.5rem 1rem;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            color: var(--text-secondary);
-            cursor: pointer;
-            transition: all 0.2s;
-        }
-
-        .part-btn:hover {
-            border-color: var(--accent-blue);
-            color: var(--text-primary);
-        }
-
-        .part-btn.active {
-            background: var(--accent-blue);
-            border-color: var(--accent-blue);
-            color: white;
-        }
-
-        .result-section {
-            margin-top: 1.5rem;
+        .results-section {
+            margin-top: 2rem;
         }
 
         .result-card {
-            background: var(--bg-tertiary);
-            border-radius: 8px;
-            padding: 1rem;
-            margin-top: 1rem;
+            background: var(--bg-secondary);
+            border-radius: 12px;
+            padding: 1.5rem;
+            border-left: 4px solid var(--accent-green);
+            margin-bottom: 1rem;
         }
 
         .result-header {
@@ -206,237 +655,147 @@
             margin-bottom: 1rem;
         }
 
-        .result-status {
-            display: inline-flex;
-            align-items: center;
-            gap: 0.5rem;
-            padding: 0.25rem 0.75rem;
-            border-radius: 20px;
-            font-size: 0.875rem;
-            font-weight: 500;
-        }
-
-        .result-status.success {
-            background: rgba(34, 197, 94, 0.2);
-            color: var(--success);
-        }
-
-        .result-status.error {
-            background: rgba(239, 68, 68, 0.2);
-            color: var(--error);
-        }
-
-        .answer-display {
+        .final-answer {
             font-size: 2rem;
-            font-weight: 700;
+            font-weight: bold;
             color: var(--accent-green);
             text-align: center;
             padding: 1.5rem;
-            background: var(--bg-secondary);
+            background: var(--bg-tertiary);
             border-radius: 8px;
             margin: 1rem 0;
         }
 
-        .answer-unit {
-            font-size: 1rem;
-            color: var(--text-secondary);
-            margin-left: 0.5rem;
-        }
-
-        .info-grid {
-            display: grid;
-            grid-template-columns: repeat(2, 1fr);
-            gap: 1rem;
-            margin-top: 1rem;
-        }
-
-        .info-item {
-            background: var(--bg-secondary);
-            padding: 0.75rem;
-            border-radius: 6px;
-        }
-
-        .info-label {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            letter-spacing: 0.05em;
-            margin-bottom: 0.25rem;
-        }
-
-        .info-value {
-            font-weight: 500;
-            color: var(--accent-blue);
-        }
-
-        .audit-log {
-            background: var(--bg-primary);
-            border-radius: 6px;
+        .step-card {
+            background: var(--bg-tertiary);
+            border-radius: 8px;
             padding: 1rem;
-            font-family: 'Courier New', monospace;
-            font-size: 0.875rem;
-            max-height: 300px;
-            overflow-y: auto;
-            margin-top: 1rem;
+            margin-bottom: 0.75rem;
+            border: 1px solid var(--border-color);
         }
 
-        .log-entry {
-            padding: 0.25rem 0;
-            border-bottom: 1px solid var(--border-color);
-        }
-
-        .log-entry:last-child {
-            border-bottom: none;
-        }
-
-        .extraction-list {
-            list-style: none;
-            margin-top: 0.5rem;
-        }
-
-        .extraction-item {
-            display: flex;
-            justify-content: space-between;
-            padding: 0.5rem;
-            background: var(--bg-secondary);
-            border-radius: 4px;
+        .step-number {
+            display: inline-block;
+            background: var(--accent-blue);
+            color: white;
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            font-weight: 600;
             margin-bottom: 0.5rem;
         }
 
-        .extraction-name {
-            color: var(--accent-purple);
+        .equation {
+            font-family: 'Courier New', monospace;
+            background: var(--bg-primary);
+            padding: 0.5rem;
+            border-radius: 4px;
+            margin: 0.5rem 0;
+            color: var(--accent-orange);
+        }
+
+        .tag-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .tag {
+            padding: 0.25rem 0.75rem;
+            border-radius: 20px;
+            font-size: 0.85rem;
             font-weight: 500;
         }
 
-        .extraction-value {
-            color: var(--text-primary);
-        }
-
-        .extraction-unit {
-            color: var(--text-secondary);
-            font-size: 0.875rem;
-        }
-
-        .operation-dag {
-            display: flex;
-            flex-direction: column;
-            gap: 0.5rem;
-            margin-top: 1rem;
-        }
-
-        .dag-node {
-            display: flex;
-            align-items: center;
-            gap: 1rem;
-            padding: 0.75rem;
-            background: var(--bg-secondary);
-            border-radius: 6px;
-            border-left: 3px solid var(--accent-blue);
-        }
-
-        .dag-node.primary {
-            border-left-color: var(--accent-green);
-        }
-
-        .dag-order {
-            background: var(--bg-tertiary);
-            padding: 0.25rem 0.5rem;
-            border-radius: 4px;
-            font-size: 0.75rem;
-            font-weight: 600;
-            min-width: 24px;
-            text-align: center;
-        }
-
-        .dag-info {
-            flex: 1;
-        }
-
-        .dag-operation {
-            font-weight: 600;
-            color: var(--text-primary);
-        }
-
-        .dag-details {
-            font-size: 0.875rem;
-            color: var(--text-secondary);
-        }
+        .tag-operation { background: rgba(59, 130, 246, 0.2); color: var(--accent-blue); }
+        .tag-bucket { background: rgba(139, 92, 246, 0.2); color: var(--accent-purple); }
+        .tag-model { background: rgba(16, 185, 129, 0.2); color: var(--accent-green); }
+        .tag-tool { background: rgba(245, 158, 11, 0.2); color: var(--accent-orange); }
 
         .loading {
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
+            text-align: center;
             padding: 2rem;
+            color: var(--text-secondary);
         }
 
         .spinner {
-            width: 24px;
-            height: 24px;
-            border: 3px solid var(--border-color);
-            border-top-color: var(--accent-blue);
+            border: 3px solid var(--bg-tertiary);
+            border-top: 3px solid var(--accent-blue);
             border-radius: 50%;
+            width: 40px;
+            height: 40px;
             animation: spin 1s linear infinite;
+            margin: 0 auto 1rem;
         }
 
         @keyframes spin {
-            to { transform: rotate(360deg); }
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
         }
 
-        .hidden {
-            display: none;
+        .error-message {
+            background: rgba(239, 68, 68, 0.1);
+            border: 1px solid var(--error);
+            color: var(--error);
+            padding: 1rem;
+            border-radius: 8px;
+            margin: 1rem 0;
+        }
+
+        .warning-message {
+            background: rgba(234, 179, 8, 0.1);
+            border: 1px solid var(--warning);
+            color: var(--warning);
+            padding: 0.75rem;
+            border-radius: 6px;
+            margin: 0.5rem 0;
+            font-size: 0.9rem;
+        }
+
+        .audit-box {
+            background: linear-gradient(135deg, rgba(139, 92, 246, 0.1), rgba(59, 130, 246, 0.1));
+            border: 1px solid var(--accent-purple);
+            padding: 1rem;
+            border-radius: 8px;
+            margin-top: 1rem;
+            font-style: italic;
+            color: var(--text-secondary);
         }
 
         .preset-buttons {
+            display: flex;
+            gap: 0.5rem;
+            flex-wrap: wrap;
+            margin-bottom: 1rem;
+        }
+
+        .preset-btn {
+            background: var(--bg-tertiary);
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            color: var(--text-secondary);
+            cursor: pointer;
+            transition: all 0.2s;
+            font-size: 0.9rem;
+        }
+
+        .preset-btn:hover {
+            background: var(--accent-blue);
+            color: white;
+            border-color: var(--accent-blue);
+        }
+
+        .values-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
             gap: 0.75rem;
             margin-top: 1rem;
         }
 
-        .preset-btn {
-            padding: 0.75rem;
-            background: var(--bg-tertiary);
-            border: 1px solid var(--border-color);
-            border-radius: 6px;
-            color: var(--text-secondary);
-            cursor: pointer;
-            text-align: left;
-            transition: all 0.2s;
-            font-size: 0.875rem;
-        }
-
-        .preset-btn:hover {
-            border-color: var(--accent-blue);
-            color: var(--text-primary);
-            background: var(--bg-secondary);
-        }
-
-        .metrics-grid {
-            display: grid;
-            grid-template-columns: repeat(3, 1fr);
-            gap: 1rem;
-            margin-top: 1rem;
-        }
-
-        .metric-card {
-            text-align: center;
-            padding: 1rem;
-            background: var(--bg-tertiary);
-            border-radius: 8px;
-        }
-
-        .metric-value {
-            font-size: 1.5rem;
-            font-weight: 700;
-            color: var(--accent-blue);
-        }
-
-        .metric-label {
-            font-size: 0.75rem;
-            color: var(--text-secondary);
-            text-transform: uppercase;
-            margin-top: 0.25rem;
+        .hidden {
+            display: none;
         }
     </style>
 </head>
@@ -444,356 +803,232 @@
     <div class="container">
         <header>
             <h1>🧠 MentalOS</h1>
-            <p class="subtitle">Deterministic Cognitive Physics Engine v1.0.0</p>
+            <p class="subtitle">Deterministic Cognitive Physics Engine</p>
         </header>
 
         <div class="main-grid">
             <!-- Input Section -->
             <div class="card">
-                <div class="card-header">
-                    <div class="card-icon">📝</div>
-                    <h2 class="card-title">Problem Input</h2>
-                </div>
-
-                <textarea 
-                    id="questionInput" 
-                    placeholder="Enter your physics or math problem here...
-
-Example:
-A man pushes a 45 kg box from rest along a horizontal floor by exerting a force of 87 N downward at 33° to the horizontal against a friction force of 62 N over a distance of 13 m.
-a) How much work was done in moving the box?"
-                ></textarea>
-
-                <div id="partSelector" class="part-selector hidden"></div>
-
-                <button id="processBtn" class="btn" onclick="processQuestion()">
-                    🚀 Process Problem
-                </button>
+                <h2 class="card-title">📝 Problem Input</h2>
 
                 <div class="preset-buttons">
-                    <button class="preset-btn" onclick="loadPreset('work')">
-                        💼 Work & Energy Problem
-                    </button>
-                    <button class="preset-btn" onclick="loadPreset('kinematics')">
-                        🏃 Kinematics Problem
-                    </button>
-                    <button class="preset-btn" onclick="loadPreset('forces')">
-                        ⚡ Force Analysis
-                    </button>
-                    <button class="preset-btn" onclick="loadPreset('vectors')">
-                        📐 Vector Resolution
-                    </button>
+                    <button class="preset-btn" onclick="loadPreset('work')">Work Example</button>
+                    <button class="preset-btn" onclick="loadPreset('velocity')">Velocity</button>
+                    <button class="preset-btn" onclick="loadPreset('force')">Force</button>
+                    <button class="preset-btn" onclick="loadPreset('custom')">Clear</button>
                 </div>
+
+                <div class="input-group">
+                    <label for="questionText">Physics Problem:</label>
+                    <textarea id="questionText" placeholder="Enter your physics problem here..."></textarea>
+                </div>
+
+                <div class="input-group">
+                    <label for="partLabel">Part (optional):</label>
+                    <input type="text" id="partLabel" placeholder="e.g., a, b, c">
+                </div>
+
+                <div class="input-group">
+                    <label>Known Values (override extracted values):</label>
+                    <div class="values-grid" id="valuesGrid">
+                        <div>
+                            <label style="font-size: 0.85rem;">Force (N)</label>
+                            <input type="number" id="val_F" step="0.01" placeholder="Auto">
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem;">Distance (m)</label>
+                            <input type="number" id="val_d" step="0.01" placeholder="Auto">
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem;">Angle (°)</label>
+                            <input type="number" id="val_theta" step="0.01" placeholder="Auto">
+                        </div>
+                        <div>
+                            <label style="font-size: 0.85rem;">Mass (kg)</label>
+                            <input type="number" id="val_m" step="0.01" placeholder="Auto">
+                        </div>
+                    </div>
+                </div>
+
+                <button class="btn" onclick="processProblem()">🚀 Solve Problem</button>
             </div>
 
-            <!-- Results Section -->
+            <!-- Analysis Section -->
             <div class="card">
-                <div class="card-header">
-                    <div class="card-icon">📊</div>
-                    <h2 class="card-title">Analysis Results</h2>
+                <h2 class="card-title">🔍 Cognitive Analysis</h2>
+                <div id="analysisContent">
+                    <p style="color: var(--text-secondary);">Enter a problem to see the cognitive breakdown...</p>
                 </div>
+            </div>
+        </div>
 
-                <div id="loadingState" class="loading hidden">
-                    <div class="spinner"></div>
-                    <span>Processing...</span>
-                </div>
-
-                <div id="resultsContent" class="hidden">
-                    <div class="result-header">
-                        <h3>Pipeline Execution</h3>
-                        <span id="resultStatus" class="result-status"></span>
-                    </div>
-
-                    <div id="answerSection" class="hidden">
-                        <div class="answer-display">
-                            <span id="answerValue"></span>
-                            <span id="answerUnit" class="answer-unit"></span>
-                        </div>
-                        <p id="explanationText" style="text-align: center; color: var(--text-secondary);"></p>
-                    </div>
-
-                    <div class="metrics-grid">
-                        <div class="metric-card">
-                            <div class="metric-value" id="metricOperations">0</div>
-                            <div class="metric-label">Operations</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-value" id="metricValues">0</div>
-                            <div class="metric-label">Extracted Values</div>
-                        </div>
-                        <div class="metric-card">
-                            <div class="metric-value" id="metricSteps">0</div>
-                            <div class="metric-label">Pipeline Steps</div>
-                        </div>
-                    </div>
-
-                    <div class="result-card">
-                        <h4>🎯 Primary Operation</h4>
-                        <div class="info-grid">
-                            <div class="info-item">
-                                <div class="info-label">Operation</div>
-                                <div class="info-value" id="primaryOperation">-</div>
-                            </div>
-                            <div class="info-item">
-                                <div class="info-label">Bucket</div>
-                                <div class="info-value" id="selectedBucket">-</div>
-                            </div>
-                            <div class="info-item">
-                                <div class="info-label">Model</div>
-                                <div class="info-value" id="selectedModel">-</div>
-                            </div>
-                            <div class="info-item">
-                                <div class="info-label">Tool</div>
-                                <div class="info-value" id="selectedTool">-</div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div class="result-card">
-                        <h4>📦 Extracted Values</h4>
-                        <ul id="extractedList" class="extraction-list"></ul>
-                    </div>
-
-                    <div class="result-card">
-                        <h4>🔗 Operation DAG</h4>
-                        <div id="operationDag" class="operation-dag"></div>
-                    </div>
-
-                    <div class="result-card">
-                        <h4>📋 Audit Log</h4>
-                        <div id="auditLog" class="audit-log"></div>
-                    </div>
-
-                    <button class="btn btn-secondary" onclick="clearResults()">
-                        🔄 Clear Results
-                    </button>
-                </div>
-
-                <div id="errorSection" class="hidden">
-                    <div class="result-card" style="border: 1px solid var(--error);">
-                        <h4 style="color: var(--error);">❌ Error</h4>
-                        <p id="errorMessage" style="margin-top: 0.5rem;"></p>
-                    </div>
-                </div>
+        <!-- Results Section -->
+        <div class="results-section hidden" id="resultsSection">
+            <div class="card">
+                <h2 class="card-title">✅ Solution</h2>
+                <div id="resultsContent"></div>
             </div>
         </div>
     </div>
 
     <script>
-        const API_BASE = '';
-        let currentPart = null;
+        const presets = {
+            work: "A man pushes a 45 kg box from rest along a horizontal floor by exerting a force of 87 N downward at 33° to the horizontal against a friction force of 62 N over a distance of 13 m. How much work was done in moving the box?",
+            velocity: "A car accelerates from rest to 25 m/s in 8 seconds. What is its average acceleration?",
+            force: "A 12 kg object experiences a net force that causes it to accelerate at 3.5 m/s². What is the magnitude of the force?"
+        };
 
         function loadPreset(type) {
-            const presets = {
-                work: `A man pushes a 45 kg box from rest along a horizontal floor by exerting a force of 87 N downward at 33° to the horizontal against a friction force of 62 N over a distance of 13 m.\na) How much work was done in moving the box?`,
-                kinematics: `A car accelerates uniformly from rest to 25 m/s in 8 seconds.\na) What is the acceleration?\nb) How far did the car travel?`,
-                forces: `A 10 kg block rests on a frictionless incline angled at 30° to the horizontal.\na) What is the component of gravity parallel to the incline?\nb) What is the normal force?`,
-                vectors: `A force of 50 N is applied at an angle of 37° above the horizontal.\na) Resolve the force into x and y components.\nb) What is the magnitude of the resultant if another 30 N force acts horizontally?`
-            };
-            document.getElementById('questionInput').value = presets[type];
-            detectParts();
+            if (type === 'custom') {
+                document.getElementById('questionText').value = '';
+                document.getElementById('partLabel').value = '';
+                clearValues();
+            } else {
+                document.getElementById('questionText').value = presets[type];
+            }
         }
 
-        function detectParts() {
-            const text = document.getElementById('questionInput').value;
-            const partSelector = document.getElementById('partSelector');
-            
-            fetch(`${API_BASE}/cognitive/parts?question_text=${encodeURIComponent(text)}`)
-                .then(res => res.json())
-                .then(data => {
-                    if (data.success && Object.keys(data.parts).length > 1) {
-                        partSelector.innerHTML = '';
-                        Object.keys(data.parts).forEach(part => {
-                            const btn = document.createElement('button');
-                            btn.className = `part-btn ${currentPart === part ? 'active' : ''}`;
-                            btn.textContent = `Part ${part.toUpperCase()}`;
-                            btn.onclick = () => selectPart(part);
-                            partSelector.appendChild(btn);
-                        });
-                        partSelector.classList.remove('hidden');
-                        if (!currentPart) {
-                            currentPart = 'a';
-                            updatePartButtons();
-                        }
-                    } else {
-                        partSelector.classList.add('hidden');
-                        currentPart = null;
-                    }
-                })
-                .catch(() => {
-                    partSelector.classList.add('hidden');
-                });
-        }
-
-        function selectPart(part) {
-            currentPart = part;
-            updatePartButtons();
-        }
-
-        function updatePartButtons() {
-            const buttons = document.querySelectorAll('.part-btn');
-            buttons.forEach(btn => {
-                const part = btn.textContent.replace('Part ', '').toLowerCase();
-                btn.classList.toggle('active', part === currentPart);
+        function clearValues() {
+            ['val_F', 'val_d', 'val_theta', 'val_m'].forEach(id => {
+                document.getElementById(id).value = '';
             });
         }
 
-        async function processQuestion() {
-            const questionText = document.getElementById('questionInput').value.trim();
+        function getUserValues() {
+            const values = {};
+            const mappings = {
+                'val_F': 'F',
+                'val_d': 'd',
+                'val_theta': 'theta',
+                'val_m': 'm'
+            };
+
+            for (const [inputId, key] of Object.entries(mappings)) {
+                const value = parseFloat(document.getElementById(inputId).value);
+                if (!isNaN(value)) {
+                    values[key] = value;
+                }
+            }
+
+            return values;
+        }
+
+        async function processProblem() {
+            const questionText = document.getElementById('questionText').value.trim();
             if (!questionText) {
-                alert('Please enter a problem statement');
+                alert('Please enter a physics problem');
                 return;
             }
 
-            const processBtn = document.getElementById('processBtn');
-            const loadingState = document.getElementById('loadingState');
-            const resultsContent = document.getElementById('resultsContent');
-            const errorSection = document.getElementById('errorSection');
+            const partLabel = document.getElementById('partLabel').value.trim() || null;
+            const userValues = getUserValues();
 
-            processBtn.disabled = true;
-            loadingState.classList.remove('hidden');
-            resultsContent.classList.add('hidden');
-            errorSection.classList.add('hidden');
+            // Show loading state
+            document.getElementById('resultsSection').classList.remove('hidden');
+            document.getElementById('resultsContent').innerHTML = `
+                <div class="loading">
+                    <div class="spinner"></div>
+                    <p>Analyzing problem structure...</p>
+                </div>
+            `;
 
             try {
-                const response = await fetch(`${API_BASE}/cognitive/process`, {
+                const response = await fetch('/cognitive/process', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
                     body: JSON.stringify({
                         question_text: questionText,
-                        part: currentPart
+                        part_label: partLabel,
+                        user_values: userValues
                     })
                 });
 
-                const data = await response.json();
-
                 if (!response.ok) {
-                    throw new Error(data.detail || 'Failed to process question');
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Failed to process problem');
                 }
 
-                displayResults(data);
+                const result = await response.json();
+                displayResults(result);
+
             } catch (error) {
-                showError(error.message);
-            } finally {
-                processBtn.disabled = false;
-                loadingState.classList.add('hidden');
+                document.getElementById('resultsContent').innerHTML = `
+                    <div class="error-message">
+                        <strong>Error:</strong> ${error.message}
+                    </div>
+                `;
             }
         }
 
-        function displayResults(data) {
-            const resultsContent = document.getElementById('resultsContent');
-            const resultStatus = document.getElementById('resultStatus');
-            const answerSection = document.getElementById('answerSection');
-            const errorSection = document.getElementById('errorSection');
+        function displayResults(result) {
+            const content = document.getElementById('resultsContent');
 
-            // Status
-            resultStatus.textContent = data.success ? '✓ Success' : '✗ Failed';
-            resultStatus.className = `result-status ${data.success ? 'success' : 'error'}`;
+            let html = '';
 
-            if (data.success) {
-                errorSection.classList.add('hidden');
-                
-                // Answer
-                if (data.answer !== null && data.answer !== undefined) {
-                    document.getElementById('answerValue').textContent = data.answer.toFixed(4);
-                    document.getElementById('answerUnit').textContent = data.unit || '';
-                    document.getElementById('answerSection').classList.remove('hidden');
-                    document.getElementById('explanationText').textContent = data.explanation;
-                } else {
-                    document.getElementById('answerSection').classList.add('hidden');
-                }
-
-                // Metrics
-                if (data.state) {
-                    document.getElementById('metricOperations').textContent = data.state.operation_dag?.length || 0;
-                    document.getElementById('metricValues').textContent = data.state.extracted_values?.length || 0;
-                    document.getElementById('metricSteps').textContent = data.state.audit_log?.length || 0;
-
-                    // Primary operation info
-                    document.getElementById('primaryOperation').textContent = data.state.identified_operation || '-';
-                    document.getElementById('selectedBucket').textContent = data.state.selected_bucket || '-';
-                    document.getElementById('selectedModel').textContent = data.state.selected_model || '-';
-                    document.getElementById('selectedTool').textContent = data.state.selected_tool || '-';
-
-                    // Extracted values
-                    const extractedList = document.getElementById('extractedList');
-                    extractedList.innerHTML = '';
-                    if (data.state.extracted_values) {
-                        data.state.extracted_values.forEach(val => {
-                            const li = document.createElement('li');
-                            li.className = 'extraction-item';
-                            li.innerHTML = `
-                                <span class="extraction-name">${val.name}</span>
-                                <span>
-                                    <span class="extraction-value">${val.value}</span>
-                                    <span class="extraction-unit">${val.unit}</span>
-                                </span>
-                            `;
-                            extractedList.appendChild(li);
-                        });
-                    }
-
-                    // Operation DAG
-                    const dagContainer = document.getElementById('operationDag');
-                    dagContainer.innerHTML = '';
-                    if (data.state.operation_dag) {
-                        data.state.operation_dag.forEach((node, idx) => {
-                            const isPrimary = idx === data.state.operation_dag.length - 1;
-                            const div = document.createElement('div');
-                            div.className = `dag-node ${isPrimary ? 'primary' : ''}`;
-                            div.innerHTML = `
-                                <span class="dag-order">${node.order + 1}</span>
-                                <div class="dag-info">
-                                    <div class="dag-operation">${node.operation}</div>
-                                    <div class="dag-details">${node.bucket} • ${node.model}</div>
-                                </div>
-                            `;
-                            dagContainer.appendChild(div);
-                        });
-                    }
-
-                    // Audit log
-                    const auditLog = document.getElementById('auditLog');
-                    auditLog.innerHTML = '';
-                    if (data.state.audit_log) {
-                        data.state.audit_log.forEach(entry => {
-                            const div = document.createElement('div');
-                            div.className = 'log-entry';
-                            div.textContent = entry;
-                            auditLog.appendChild(div);
-                        });
-                    }
-                }
-
-                resultsContent.classList.remove('hidden');
-            } else {
-                resultsContent.classList.add('hidden');
-                showError(data.error_message || 'Unknown error occurred');
+            // Final Answer
+            if (result.final_answer !== null && result.final_answer !== undefined) {
+                html += `
+                    <div class="final-answer">
+                        ${result.final_answer.toFixed(2)} ${result.final_unit || ''}
+                    </div>
+                `;
             }
+
+            // Explanation
+            html += `<p style="margin-bottom: 1.5rem;">${result.answer_explanation}</p>`;
+
+            // Execution Steps
+            if (result.execution_steps && result.execution_steps.length > 0) {
+                html += '<h3 style="margin: 1.5rem 0 1rem; color: var(--accent-blue);">Solution Steps</h3>';
+
+                result.execution_steps.forEach(step => {
+                    html += `
+                        <div class="step-card">
+                            <span class="step-number">Step ${step.step_number}</span>
+                            <div style="margin: 0.5rem 0;"><strong>Operation:</strong> ${step.operation_node_id}</div>
+                            <div class="equation">${step.equation_used}</div>
+                            <div style="color: var(--text-secondary); font-size: 0.9rem;">
+                                ${step.explanation}
+                            </div>
+                        </div>
+                    `;
+                });
+            }
+
+            // Warnings
+            if (result.warnings && result.warnings.length > 0) {
+                html += '<h3 style="margin: 1.5rem 0 1rem; color: var(--warning);">⚠️ Warnings</h3>';
+                result.warnings.forEach(warning => {
+                    html += `<div class="warning-message">${warning}</div>`;
+                });
+            }
+
+            // Audit Summary
+            if (result.audit_summary) {
+                html += `
+                    <div class="audit-box">
+                        <strong>🤖 AI Audit:</strong><br>
+                        ${result.audit_summary}
+                    </div>
+                `;
+            }
+
+            // Stats
+            html += `
+                <div style="margin-top: 1.5rem; padding-top: 1rem; border-top: 1px solid var(--border-color); display: flex; gap: 2rem; color: var(--text-secondary);">
+                    <div><strong>Total Steps:</strong> ${result.total_steps}</div>
+                    <div><strong>Status:</strong> ${result.success ? '✅ Success' : '❌ Failed'}</div>
+                </div>
+            `;
+
+            content.innerHTML = html;
         }
 
-        function showError(message) {
-            const errorSection = document.getElementById('errorSection');
-            document.getElementById('errorMessage').textContent = message;
-            errorSection.classList.remove('hidden');
-        }
-
-        function clearResults() {
-            document.getElementById('resultsContent').classList.add('hidden');
-            document.getElementById('errorSection').classList.add('hidden');
-            document.getElementById('questionInput').value = '';
-            document.getElementById('partSelector').innerHTML = '';
-            document.getElementById('partSelector').classList.add('hidden');
-            currentPart = null;
-        }
-
-        // Auto-detect parts when typing stops
-        let debounceTimer;
-        document.getElementById('questionInput').addEventListener('input', () => {
-            clearTimeout(debounceTimer);
-            debounceTimer = setTimeout(detectParts, 500);
+        // Initialize with empty state
+        document.addEventListener('DOMContentLoaded', () => {
+            clearValues();
         });
     </script>
 </body>
