@@ -1,4 +1,3 @@
---- mentalos/types/core_types.py (原始)
 """
 MentalOS Types - Core Type Definitions
 
