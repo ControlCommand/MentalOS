@@ -1,0 +1,1 @@
+"""MentalOS Equations Module."""
